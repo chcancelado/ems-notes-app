@@ -39,4 +39,4 @@ flowchart LR
 
     AuthUsers -->|RLS user_id| PatientInfoTbl
     AuthUsers -->|RLS user_id| VitalsTbl
-    AuthUsers -->|RLS user_id| ReportsTbl
+```
