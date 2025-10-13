@@ -1,11 +1,11 @@
 ```mermaid
 flowchart LR
-    subgraph Flutter App
-        Main[Main.dart<br/>App Bootstrap]
-        LoginPage[LoginPage<br/>(login_page.dart)]
-        PatientInfoPage[PatientInfoPage<br/>(patient_info_page.dart)]
-        VitalsPage[VitalsPage<br/>(vitals_page.dart)]
-        ReportPage[ReportPage<br/>(report_page.dart)]
+    subgraph Flutter_App
+        Main[Main.dart - App Bootstrap]
+        LoginPage[LoginPage (login_page.dart)]
+        PatientInfoPage[PatientInfoPage (patient_info_page.dart)]
+        VitalsPage[VitalsPage (vitals_page.dart)]
+        ReportPage[ReportPage (report_page.dart)]
 
         LoginCtrl[LoginController]
         PatientInfoCtrl[PatientInfoController]
@@ -13,7 +13,7 @@ flowchart LR
         ReportCtrl[ReportController]
     end
 
-    subgraph Supabase Backend
+    subgraph Supabase_Backend
         PatientInfoTbl[(patient_info table)]
         VitalsTbl[(vitals table)]
         ReportsTbl[(reports table)]
