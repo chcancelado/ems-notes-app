@@ -1,11 +1,11 @@
 ```mermaid
 flowchart LR
     subgraph Flutter App
-        Main[Main.dart\nApp Bootstrap]
-        LoginPage[LoginPage\n(login_page.dart)]
-        PatientInfoPage[PatientInfoPage\n(patient_info_page.dart)]
-        VitalsPage[VitalsPage\n(vitals_page.dart)]
-        ReportPage[ReportPage\n(report_page.dart)]
+        Main[Main.dart<br/>App Bootstrap]
+        LoginPage[LoginPage<br/>(login_page.dart)]
+        PatientInfoPage[PatientInfoPage<br/>(patient_info_page.dart)]
+        VitalsPage[VitalsPage<br/>(vitals_page.dart)]
+        ReportPage[ReportPage<br/>(report_page.dart)]
 
         LoginCtrl[LoginController]
         PatientInfoCtrl[PatientInfoController]
@@ -39,4 +39,5 @@ flowchart LR
 
     AuthUsers -->|RLS user_id| PatientInfoTbl
     AuthUsers -->|RLS user_id| VitalsTbl
+
 ```
