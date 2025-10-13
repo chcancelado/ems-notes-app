@@ -1,43 +1,42 @@
 ```mermaid
 flowchart LR
     subgraph Flutter_App
-        Main[Main.dart - App Bootstrap]
-        LoginPage[LoginPage (login_page.dart)]
-        PatientInfoPage[PatientInfoPage (patient_info_page.dart)]
-        VitalsPage[VitalsPage (vitals_page.dart)]
-        ReportPage[ReportPage (report_page.dart)]
+        Main["Main.dart - App Bootstrap"]
+        LoginPage["LoginPage (login_page.dart)"]
+        PatientInfoPage["PatientInfoPage (patient_info_page.dart)"]
+        VitalsPage["VitalsPage (vitals_page.dart)"]
+        ReportPage["ReportPage (report_page.dart)"]
 
-        LoginCtrl[LoginController]
-        PatientInfoCtrl[PatientInfoController]
-        VitalsCtrl[VitalsController]
-        ReportCtrl[ReportController]
+        LoginCtrl["LoginController"]
+        PatientInfoCtrl["PatientInfoController"]
+        VitalsCtrl["VitalsController"]
+        ReportCtrl["ReportController"]
     end
 
     subgraph Supabase_Backend
-        PatientInfoTbl[(patient_info table)]
-        VitalsTbl[(vitals table)]
-        ReportsTbl[(reports table)]
-        AuthUsers[(auth.users)]
+        PatientInfoTbl["patient_info table"]
+        VitalsTbl["vitals table"]
+        ReportsTbl["reports table"]
+        AuthUsers["auth.users"]
     end
 
-    Main -->|init/route| LoginPage
-    Main -->|init/route| PatientInfoPage
-    Main -->|init/route| VitalsPage
-    Main -->|init/route| ReportPage
+    Main -->|"init/route"| LoginPage
+    Main -->|"init/route"| PatientInfoPage
+    Main -->|"init/route"| VitalsPage
+    Main -->|"init/route"| ReportPage
 
     LoginPage --> LoginCtrl
     PatientInfoPage --> PatientInfoCtrl
     VitalsPage --> VitalsCtrl
     ReportPage --> ReportCtrl
 
-    LoginCtrl -->|sign in/out| AuthUsers
-    PatientInfoCtrl -->|upsert & fetch| PatientInfoTbl
-    VitalsCtrl -->|insert & select| VitalsTbl
-    ReportCtrl -->|load notes| ReportsTbl
-    ReportCtrl -->|uses| PatientInfoCtrl
-    ReportCtrl -->|uses| VitalsCtrl
+    LoginCtrl -->|"sign in/out"| AuthUsers
+    PatientInfoCtrl -->|"upsert & fetch"| PatientInfoTbl
+    VitalsCtrl -->|"insert & select"| VitalsTbl
+    ReportCtrl -->|"load notes"| ReportsTbl
+    ReportCtrl -->|"uses"| PatientInfoCtrl
+    ReportCtrl -->|"uses"| VitalsCtrl
 
-    AuthUsers -->|RLS user_id| PatientInfoTbl
-    AuthUsers -->|RLS user_id| VitalsTbl
-
+    AuthUsers -->|"RLS user_id"| PatientInfoTbl
+    AuthUsers -->|"RLS user_id"| VitalsTbl
 ```
