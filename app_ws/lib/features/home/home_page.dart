@@ -1,10 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../patient_info/patient_info_page.dart';
-import '../vitals/vitals_page.dart';
-import '../report/report_page.dart';
-
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
 
@@ -24,69 +20,31 @@ class HomePage extends StatelessWidget {
         ],
       ),
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: GridView.count(
-          crossAxisCount: 2,
-          mainAxisSpacing: 16.0,
-          crossAxisSpacing: 16.0,
-          children: [
-            _buildMenuCard(
-              context,
-              'Patient Info',
-              Icons.person,
-              () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const PatientInfoPage(),
-                ),
-              ),
-            ),
-            _buildMenuCard(
-              context,
-              'Vitals',
-              Icons.favorite,
-              () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const VitalsPage()),
-              ),
-            ),
-            _buildMenuCard(
-              context,
-              'Report',
-              Icons.description,
-              () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const ReportPage()),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMenuCard(
-    BuildContext context,
-    String title,
-    IconData icon,
-    VoidCallback onTap,
-  ) {
-    return Card(
-      elevation: 4.0,
-      child: InkWell(
-        onTap: onTap,
+        padding: const EdgeInsets.all(24.0),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Icon(icon, size: 48.0, color: Theme.of(context).primaryColor),
-            const SizedBox(height: 16.0),
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 18.0,
-                fontWeight: FontWeight.bold,
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.play_arrow, size: 28),
+              label: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16.0),
+                child: Text('Start a New Session', style: TextStyle(fontSize: 18)),
               ),
+              onPressed: () => Navigator.of(context).pushNamed('/patient-info'),
             ),
+            const SizedBox(height: 20),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.history, size: 24),
+              label: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16.0),
+                child: Text('View Session History', style: TextStyle(fontSize: 18)),
+              ),
+              onPressed: () => Navigator.of(context).pushNamed('/sessions'),
+            ),
+            const Spacer(),
+            Center(child: Text('Quick actions and recent sessions appear here', style: Theme.of(context).textTheme.bodyLarge)),
+            const SizedBox(height: 24),
           ],
         ),
       ),

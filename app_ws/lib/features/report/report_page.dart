@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../patient_info/patient_info_controller.dart';
 import '../vitals/vitals_controller.dart';
+import '../vitals/vitals_controller.dart';
 import 'report_controller.dart';
 
 class ReportPage extends StatefulWidget {
@@ -17,11 +18,21 @@ class _ReportPageState extends State<ReportPage> {
   final _notesController = TextEditingController();
   final _observationsController = TextEditingController();
   bool _isSaving = false;
+  String? _sessionId;
 
   @override
   void initState() {
     super.initState();
-    _reportFuture = _loadReport();
+    // report data may depend on the session id passed via route arguments
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is String) {
+        _sessionId = args;
+      }
+      setState(() {
+        _reportFuture = _loadReport();
+      });
+    });
   }
 
   @override
@@ -32,6 +43,12 @@ class _ReportPageState extends State<ReportPage> {
   }
 
   Future<ReportData> _loadReport() async {
+    if (_sessionId != null) {
+      // If a session id is present we could load session-specific data here.
+      // For now, fall back to existing report loading logic.
+      final data = await _controller.loadReport();
+      return data;
+    }
     final data = await _controller.loadReport();
     _notesController.text = data.notes?.notes ?? '';
     _observationsController.text = data.notes?.observations ?? '';

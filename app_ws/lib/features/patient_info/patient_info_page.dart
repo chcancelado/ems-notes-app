@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'patient_info_controller.dart';
+import '../../services/session_service.dart';
 
 class PatientInfoPage extends StatefulWidget {
   const PatientInfoPage({super.key});
@@ -15,6 +18,42 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
   String _age = '';
   String _chiefComplaint = '';
   bool _isSaving = false;
+  Timer? _reminderTimer;
+  Duration _timeLeft = const Duration(minutes: 5);
+  bool _timerStarted = false;
+
+  void _startReminderTimer() {
+    if (_timerStarted) return;
+    _timerStarted = true;
+    _timeLeft = const Duration(minutes: 5);
+    _reminderTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      setState(() {
+        if (_timeLeft.inSeconds <= 1) {
+          t.cancel();
+          _showReminder();
+        } else {
+          _timeLeft = Duration(seconds: _timeLeft.inSeconds - 1);
+        }
+      });
+    });
+  }
+
+  void _showReminder() {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reminder'),
+        content: const Text('Re-check patient vitals (5 minutes since session start).'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _savePatientInfo() async {
     if (!_formKey.currentState!.validate()) {
@@ -40,13 +79,16 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
         chiefComplaint: _chiefComplaint,
       );
 
-      if (!mounted) {
-        return;
-      }
+      // create an in-memory session and add to sessionService
+      final sid = DateTime.now().millisecondsSinceEpoch.toString();
+      sessionService.addSession(Session(id: sid, patientName: _name));
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Patient information saved.')),
-      );
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Patient information saved.')));
+
+      // navigate to report for this session
+      Navigator.of(context).pushReplacementNamed('/report', arguments: sid);
     } catch (error) {
       if (!mounted) {
         return;
@@ -79,7 +121,10 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                   labelText: 'Patient Name',
                   border: OutlineInputBorder(),
                 ),
-                onChanged: (value) => _name = value,
+                onChanged: (value) {
+                  if (!_timerStarted) _startReminderTimer();
+                  _name = value;
+                },
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Please enter patient name';
@@ -94,7 +139,10 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                   border: OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.number,
-                onChanged: (value) => _age = value,
+                onChanged: (value) {
+                  if (!_timerStarted) _startReminderTimer();
+                  _age = value;
+                },
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Please enter age';
@@ -112,7 +160,10 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                   border: OutlineInputBorder(),
                 ),
                 maxLines: 3,
-                onChanged: (value) => _chiefComplaint = value,
+                onChanged: (value) {
+                  if (!_timerStarted) _startReminderTimer();
+                  _chiefComplaint = value;
+                },
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Please enter chief complaint';
@@ -120,7 +171,12 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                   return null;
                 },
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
+              if (_timerStarted) ...[
+                Text('Reminder in: ${_formatDuration(_timeLeft)}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 12),
+              ],
+              const SizedBox(height: 12),
               ElevatedButton(
                 onPressed: _isSaving ? null : _savePatientInfo,
                 style: ElevatedButton.styleFrom(
@@ -139,5 +195,17 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
         ),
       ),
     );
+  }
+
+  String _formatDuration(Duration d) {
+    final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$mm:$ss';
+  }
+
+  @override
+  void dispose() {
+    _reminderTimer?.cancel();
+    super.dispose();
   }
 }

@@ -8,6 +8,7 @@ import 'features/login/index.dart';
 import 'features/patient_info/index.dart';
 import 'features/report/index.dart';
 import 'features/vitals/index.dart';
+import 'features/sessions/index.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -62,12 +63,23 @@ class EMSNotesApp extends StatelessWidget {
         ),
       ),
       initialRoute: initialRoute,
-      routes: {
-        '/login': (context) => const LoginPage(),
-        '/home': (context) => const HomePage(),
-        '/patient-info': (context) => const PatientInfoPage(),
-        '/vitals': (context) => const VitalsPage(),
-        '/report': (context) => const ReportPage(),
+      onGenerateRoute: (settings) {
+        switch (settings.name) {
+          case '/login':
+            return MaterialPageRoute(builder: (_) => const LoginPage());
+          case '/home':
+            return MaterialPageRoute(builder: (_) => const HomePage());
+          case '/patient-info':
+            return MaterialPageRoute(builder: (_) => const PatientInfoPage());
+          case '/vitals':
+            return MaterialPageRoute(builder: (_) => const VitalsPage());
+          case '/sessions':
+            return MaterialPageRoute(builder: (_) => const SessionsPage());
+          case '/report':
+            return MaterialPageRoute(builder: (_) => const ReportPage(), settings: settings);
+          default:
+            return MaterialPageRoute(builder: (_) => const LoginPage());
+        }
       },
     );
   }
