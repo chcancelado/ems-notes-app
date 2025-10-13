@@ -1,3 +1,4 @@
+```mermaid
 flowchart LR
     subgraph Flutter App
         Main[Main.dart\nApp Bootstrap]
