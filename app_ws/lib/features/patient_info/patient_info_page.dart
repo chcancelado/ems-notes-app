@@ -1,8 +1,8 @@
-import 'dart:async';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'patient_info_controller.dart';
 import '../../services/session_service.dart';
+import '../../config/app_config.dart';
 
 class PatientInfoPage extends StatefulWidget {
   const PatientInfoPage({super.key});
@@ -18,33 +18,52 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
   String _age = '';
   String _chiefComplaint = '';
   bool _isSaving = false;
-  Timer? _reminderTimer;
-  Duration _timeLeft = const Duration(minutes: 5);
+  bool _isEnding = false;
   bool _timerStarted = false;
+  bool _reminderShown = false;
+  String? _sessionId;
+  ValueListenable<Duration?>? _timeLeftListenable;
+  VoidCallback? _timeListener;
 
   void _startReminderTimer() {
     if (_timerStarted) return;
-    _timerStarted = true;
-    _timeLeft = const Duration(minutes: 5);
-    _reminderTimer = Timer.periodic(const Duration(seconds: 1), (t) {
-      setState(() {
-        if (_timeLeft.inSeconds <= 1) {
-          t.cancel();
-          _showReminder();
-        } else {
-          _timeLeft = Duration(seconds: _timeLeft.inSeconds - 1);
-        }
-      });
+    final createdAt = DateTime.now();
+    final sid = _sessionId ?? createdAt.millisecondsSinceEpoch.toString();
+    setState(() {
+      _timerStarted = true;
+      _reminderShown = false;
+      _sessionId = sid;
     });
+
+    final provisionalData = {
+      'name': _name,
+      'age': _age.isNotEmpty ? int.tryParse(_age) : null,
+      'chiefComplaint': _chiefComplaint,
+      'provisional': true,
+    };
+
+    final existing = sessionService.findById(sid);
+    if (existing == null) {
+      sessionService.addSession(Session(
+        id: sid,
+        patientName: _name.isNotEmpty ? _name : 'Unknown',
+        data: provisionalData,
+      ));
+    } else {
+      sessionService.updateSessionData(sid, provisionalData);
+    }
+
+    sessionService.setSessionTimer(sid, DateTime.now().toUtc().add(reminderDuration));
+    _listenToSessionTimer(sid);
   }
 
   void _showReminder() {
     if (!mounted) return;
     showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Reminder'),
-        content: const Text('Re-check patient vitals (5 minutes since session start).'),
+  builder: (context) => AlertDialog(
+  title: const Text('Reminder'),
+  content: Text('Re-check patient vitals (${reminderDuration.inSeconds}s since session start).'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
@@ -53,6 +72,27 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
         ],
       ),
     );
+  }
+
+  void _listenToSessionTimer(String sessionId) {
+    if (_timeLeftListenable != null && _timeListener != null) {
+      _timeLeftListenable!.removeListener(_timeListener!);
+    }
+    _timeLeftListenable = sessionService.watchSessionTimeLeft(sessionId);
+    _timeListener = () {
+      if (!mounted) return;
+      final remaining = _timeLeftListenable?.value;
+      if (!_reminderShown && remaining != null && remaining.inSeconds <= 0) {
+        _reminderShown = true;
+        _showReminder();
+      }
+      setState(() {});
+    };
+    _timeLeftListenable!.addListener(_timeListener!);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _timeListener?.call();
+    });
   }
 
   Future<void> _savePatientInfo() async {
@@ -79,16 +119,32 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
         chiefComplaint: _chiefComplaint,
       );
 
-      // create an in-memory session and add to sessionService
-      final sid = DateTime.now().millisecondsSinceEpoch.toString();
-      sessionService.addSession(Session(id: sid, patientName: _name));
+      // create an in-memory session and add to sessionService (include patient info)
+      final sid = _sessionId ?? DateTime.now().millisecondsSinceEpoch.toString();
+      // update or create session with finalized patient info
+      final existing = sessionService.findById(sid);
+      if (existing != null) {
+        sessionService.updateSessionData(sid, {
+          'name': _name,
+          'age': parsedAge,
+          'chiefComplaint': _chiefComplaint,
+          'provisional': false,
+        });
+      } else {
+        sessionService.addSession(Session(
+          id: sid,
+          patientName: _name,
+          data: {
+            'name': _name,
+            'age': parsedAge,
+            'chiefComplaint': _chiefComplaint,
+          },
+        ));
+      }
 
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Patient information saved.')));
-
-      // navigate to report for this session
-      Navigator.of(context).pushReplacementNamed('/report', arguments: sid);
     } catch (error) {
       if (!mounted) {
         return;
@@ -101,6 +157,70 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
       if (mounted) {
         setState(() {
           _isSaving = false;
+        });
+      }
+    }
+  }
+
+  /// End the current session: validate, persist patient info, mark session finalized,
+  /// and navigate to the report page for this session.
+  Future<void> _endSession() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    final parsedAge = int.tryParse(_age);
+    if (parsedAge == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a valid numeric age.')),
+      );
+      return;
+    }
+
+    setState(() {
+      _isEnding = true;
+    });
+
+    try {
+      // persist via controller
+      await _controller.savePatientInfo(
+        name: _name,
+        age: parsedAge,
+        chiefComplaint: _chiefComplaint,
+      );
+
+      // finalize or create session, then navigate to report
+      final sid = _sessionId ?? DateTime.now().millisecondsSinceEpoch.toString();
+      final existing = sessionService.findById(sid);
+      if (existing != null) {
+        sessionService.updateSessionData(sid, {
+          'name': _name,
+          'age': parsedAge,
+          'chiefComplaint': _chiefComplaint,
+          'provisional': false,
+        });
+      } else {
+        sessionService.addSession(Session(
+          id: sid,
+          patientName: _name,
+          data: {
+            'name': _name,
+            'age': parsedAge,
+            'chiefComplaint': _chiefComplaint,
+          },
+        ));
+      }
+
+      if (!mounted) return;
+
+      Navigator.of(context).pushReplacementNamed('/report', arguments: sid);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to end session: $error')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isEnding = false;
         });
       }
     }
@@ -173,8 +293,33 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
               ),
               const SizedBox(height: 12),
               if (_timerStarted) ...[
-                Text('Reminder in: ${_formatDuration(_timeLeft)}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text(
+                  'Reminder in: ${sessionService.formatDurationShort(_timeLeftListenable?.value)}',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
                 const SizedBox(height: 12),
+                // show quick links (Vitals and Chart) while the timer is running
+                if (_sessionId != null)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      IconButton(
+                        tooltip: 'Record Vitals',
+                        icon: const Icon(Icons.monitor_heart),
+                        onPressed: () {
+                          Navigator.of(context).pushNamed('/vitals', arguments: _sessionId);
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: 'Open Chart',
+                        icon: const Icon(Icons.folder_shared),
+                        onPressed: () {
+                          Navigator.of(context).pushNamed('/chart', arguments: _sessionId);
+                        },
+                      ),
+                    ],
+                  ),
               ],
               const SizedBox(height: 12),
               ElevatedButton(
@@ -190,6 +335,20 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                       )
                     : const Text('Save Patient Information'),
               ),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: _isEnding ? null : _endSession,
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(50),
+                ),
+                child: _isEnding
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('End Session and View Report'),
+              ),
             ],
           ),
         ),
@@ -197,15 +356,13 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
     );
   }
 
-  String _formatDuration(Duration d) {
-    final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$mm:$ss';
-  }
-
   @override
   void dispose() {
-    _reminderTimer?.cancel();
+    if (_timeLeftListenable != null && _timeListener != null) {
+      _timeLeftListenable!.removeListener(_timeListener!);
+    }
+    _timeLeftListenable = null;
+    _timeListener = null;
     super.dispose();
   }
 }

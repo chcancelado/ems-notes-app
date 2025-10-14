@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../services/session_service.dart';
 import '../patient_info/patient_info_controller.dart';
-import '../vitals/vitals_controller.dart';
 import '../vitals/vitals_controller.dart';
 import 'report_controller.dart';
 
@@ -23,15 +23,19 @@ class _ReportPageState extends State<ReportPage> {
   @override
   void initState() {
     super.initState();
-    // report data may depend on the session id passed via route arguments
+    // Initialize the future immediately so the FutureBuilder always has a value.
+    _reportFuture = _loadReport();
+
+    // After the first frame, pick up any route arguments (session id) and refresh.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final args = ModalRoute.of(context)?.settings.arguments;
       if (args is String) {
         _sessionId = args;
+        // Reload report data now that we know the session id
+        setState(() {
+          _reportFuture = _loadReport();
+        });
       }
-      setState(() {
-        _reportFuture = _loadReport();
-      });
     });
   }
 
@@ -44,11 +48,25 @@ class _ReportPageState extends State<ReportPage> {
 
   Future<ReportData> _loadReport() async {
     if (_sessionId != null) {
-      // If a session id is present we could load session-specific data here.
-      // For now, fall back to existing report loading logic.
-      final data = await _controller.loadReport();
-      return data;
+      final s = sessionService.findById(_sessionId!);
+      if (s != null) {
+        // Build a minimal PatientInfo from session data if available
+        final pdata = (s.data['name'] != null && s.data['age'] != null && s.data['chiefComplaint'] != null)
+            ? PatientInfo(
+                name: s.data['name'] as String,
+                age: s.data['age'] as int,
+                chiefComplaint: s.data['chiefComplaint'] as String,
+              )
+            : null;
+
+        final reportData = ReportData(patientInfo: pdata, vitalsHistory: const [], notes: null);
+        // No remote notes to prefill for session-backed reports
+        _notesController.text = '';
+        _observationsController.text = '';
+        return reportData;
+      }
     }
+
     final data = await _controller.loadReport();
     _notesController.text = data.notes?.notes ?? '';
     _observationsController.text = data.notes?.observations ?? '';
