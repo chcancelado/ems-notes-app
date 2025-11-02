@@ -285,6 +285,16 @@ class _ReportPageState extends State<ReportPage> {
                   const SizedBox(height: 8),
                   _buildVitalsHistory(data.vitalsHistory),
                   const SizedBox(height: 16),
+                  if (_session != null && _session!.chart.isNotEmpty)
+                    ...[
+                      const Text(
+                        'Medical Chart',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      _buildChartData(_session!.chart),
+                      const SizedBox(height: 16),
+                    ],
                   const Text(
                     'Notes & Observations',
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -397,6 +407,54 @@ class _ReportPageState extends State<ReportPage> {
                 label: Text(_isSaving ? 'Saving…' : 'Save Notes'),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChartData(Map<String, dynamic> chartData) {
+    final allergies = chartData['allergies'] as String? ?? '';
+    final medications = chartData['medications'] as String? ?? '';
+    final familyHistory = chartData['familyHistory'] as String? ?? '';
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (allergies.isNotEmpty) ...[
+              const Text(
+                'Allergies',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              Text(allergies),
+              const SizedBox(height: 12),
+            ],
+            if (medications.isNotEmpty) ...[
+              const Text(
+                'Current Medications',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              Text(medications),
+              const SizedBox(height: 12),
+            ],
+            if (familyHistory.isNotEmpty) ...[
+              const Text(
+                'Family History',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              Text(familyHistory),
+            ],
+            if (allergies.isEmpty && medications.isEmpty && familyHistory.isEmpty)
+              const Text(
+                'No chart data recorded',
+                style: TextStyle(fontStyle: FontStyle.italic),
+              ),
           ],
         ),
       ),
