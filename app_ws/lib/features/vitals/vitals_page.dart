@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../services/session_service.dart';
 import 'vitals_controller.dart';
 
 class VitalsPage extends StatefulWidget {
@@ -16,6 +18,25 @@ class _VitalsPageState extends State<VitalsPage> {
   String _respiratoryRate = '';
   String _temperature = '';
   bool _isSaving = false;
+  String? _sessionId;
+  ValueListenable<Duration?>? _timeLeftListenable;
+  VoidCallback? _timeListener;
+
+  void _attachSessionTimer(String sessionId) {
+    if (_sessionId == sessionId && _timeLeftListenable != null) {
+      return;
+    }
+    if (_timeLeftListenable != null && _timeListener != null) {
+      _timeLeftListenable!.removeListener(_timeListener!);
+    }
+    _sessionId = sessionId;
+    _timeLeftListenable = sessionService.watchSessionTimeLeft(sessionId);
+    _timeListener = () {
+      if (!mounted) return;
+      setState(() {});
+    };
+    _timeLeftListenable!.addListener(_timeListener!);
+  }
 
   Future<void> _saveVitals() async {
     if (!_formKey.currentState!.validate()) {
@@ -49,6 +70,16 @@ class _VitalsPageState extends State<VitalsPage> {
         temperature: parsedTemperature,
       );
 
+      if (_sessionId != null) {
+        sessionService.addSessionVitalsMap(_sessionId!, {
+          'heart_rate': parsedHeartRate,
+          'blood_pressure': _bloodPressure,
+          'respiratory_rate': parsedRespiratoryRate,
+          'temperature': parsedTemperature,
+          'recorded_at': DateTime.now().toIso8601String(),
+        });
+      }
+
       if (!mounted) {
         return;
       }
@@ -75,14 +106,45 @@ class _VitalsPageState extends State<VitalsPage> {
 
   @override
   Widget build(BuildContext context) {
+    // pick up session id if provided
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is String) {
+      _attachSessionTimer(args);
+    }
     return Scaffold(
-      appBar: AppBar(title: const Text('Patient Vitals')),
+      appBar: AppBar(
+        title: const Text('Patient Vitals'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Form(
           key: _formKey,
           child: ListView(
             children: [
+              if (_sessionId != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12.0),
+                  child: Card(
+                    color: Colors.blue.shade50,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Recording vitals for session: $_sessionId'),
+                          Text(
+                            'Time left: ${sessionService.formatDurationShort(_timeLeftListenable?.value)}',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               TextFormField(
                 decoration: const InputDecoration(
                   labelText: 'Heart Rate (bpm)',
@@ -164,6 +226,39 @@ class _VitalsPageState extends State<VitalsPage> {
                       )
                     : const Text('Save Vitals'),
               ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.arrow_back),
+                label: const Text('Back to Patient Info'),
+              ),
+              if (_sessionId != null) ...[
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.person),
+                        label: const Text('Patient Info'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).pushNamed(
+                            '/chart',
+                            arguments: _sessionId,
+                          );
+                        },
+                        icon: const Icon(Icons.folder_shared),
+                        label: const Text('Open Chart'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
