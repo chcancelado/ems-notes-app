@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-
+import '../../services/session_service.dart';
 import '../patient_info/patient_info_controller.dart';
 import '../vitals/vitals_controller.dart';
 import 'report_controller.dart';
@@ -17,11 +17,30 @@ class _ReportPageState extends State<ReportPage> {
   final _notesController = TextEditingController();
   final _observationsController = TextEditingController();
   bool _isSaving = false;
+  String? _sessionId;
+  Session? _session;
 
   @override
   void initState() {
     super.initState();
-    _reportFuture = _loadReport();
+    // Will load report after we get session ID from route args
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Get session ID from route arguments
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is String && _sessionId != args) {
+      _sessionId = args;
+      _session = sessionService.findSessionById(_sessionId!);
+      _reportFuture = _loadReport();
+      
+      // Load notes from session if available
+      if (_session != null) {
+        _notesController.text = _session!.notes;
+      }
+    }
   }
 
   @override
@@ -32,6 +51,51 @@ class _ReportPageState extends State<ReportPage> {
   }
 
   Future<ReportData> _loadReport() async {
+    // If we have a session, use session data
+    if (_session != null) {
+      final patientInfo = _session!.patientInfo;
+      PatientInfo? info;
+      
+      if (patientInfo.isNotEmpty) {
+        info = PatientInfo(
+          name: patientInfo['name'] as String? ?? '',
+          age: patientInfo['age'] as int? ?? 0,
+          chiefComplaint: patientInfo['chiefComplaint'] as String? ?? '',
+          updatedAt: _session!.startedAt,
+        );
+      }
+
+      // Get vitals from session
+      final sessionVitals = _session!.vitals;
+      final vitalsList = sessionVitals.map((v) {
+        return Vitals(
+          heartRate: v['heart_rate'] as int? ?? 0,
+          bloodPressure: v['blood_pressure'] as String? ?? '',
+          respiratoryRate: v['respiratory_rate'] as int? ?? 0,
+          temperature: (v['temperature'] as num?)?.toDouble() ?? 0.0,
+          timestamp: v['recorded_at'] != null 
+              ? DateTime.tryParse(v['recorded_at'] as String) ?? DateTime.now()
+              : DateTime.now(),
+        );
+      }).toList();
+
+      // Load notes from session
+      _notesController.text = _session!.notes;
+
+      return ReportData(
+        patientInfo: info,
+        vitalsHistory: vitalsList,
+        notes: _session!.notes.isNotEmpty 
+            ? ReportNotes(
+                notes: _session!.notes,
+                observations: '',
+                updatedAt: DateTime.now(),
+              )
+            : null,
+      );
+    }
+
+    // Fall back to loading from database if no session
     final data = await _controller.loadReport();
     _notesController.text = data.notes?.notes ?? '';
     _observationsController.text = data.notes?.observations ?? '';
@@ -56,6 +120,12 @@ class _ReportPageState extends State<ReportPage> {
     });
 
     try {
+      // Save to session if available
+      if (_session != null) {
+        _session!.setNotes(_notesController.text.trim());
+      }
+
+      // Also save to database
       await _controller.saveNotes(
         notes: _notesController.text.trim(),
         observations: _observationsController.text.trim(),
@@ -168,6 +238,39 @@ class _ReportPageState extends State<ReportPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Session info card
+                  if (_session != null) ...[
+                    Card(
+                      color: Colors.blue.shade50,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.medical_services, color: Colors.blue.shade700),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Session Report',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue.shade900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text('Session ID: ${_session!.id}'),
+                            Text('Started: ${_formatTimestamp(_session!.startedAt)}'),
+                            Text('Duration: ${_formatDuration(_session!.elapsedTime)}'),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   const Text(
                     'Patient Information',
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -298,5 +401,16 @@ class _ReportPageState extends State<ReportPage> {
         ),
       ),
     );
+  }
+
+  String _formatDuration(Duration duration) {
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    
+    if (hours > 0) {
+      return '${hours}h ${minutes}m';
+    } else {
+      return '${minutes}m';
+    }
   }
 }
