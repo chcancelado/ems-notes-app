@@ -116,7 +116,7 @@ class HomePage extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(16.0),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.3),
+                  color: Colors.white.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(12.0),
                 ),
                 child: Icon(
@@ -143,7 +143,7 @@ class HomePage extends StatelessWidget {
                       subtitle,
                       style: TextStyle(
                         fontSize: 14.0,
-                        color: Colors.white.withOpacity(0.9),
+                        color: Colors.white.withValues(alpha: 0.9),
                       ),
                     ),
                   ],

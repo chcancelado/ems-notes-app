@@ -1,6 +1,4 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import '../../services/session_service.dart';
 import 'vitals_controller.dart';
 
 class VitalsPage extends StatefulWidget {
@@ -19,24 +17,6 @@ class _VitalsPageState extends State<VitalsPage> {
   String _temperature = '';
   bool _isSaving = false;
   String? _sessionId;
-  ValueListenable<Duration?>? _timeLeftListenable;
-  VoidCallback? _timeListener;
-
-  void _attachSessionTimer(String sessionId) {
-    if (_sessionId == sessionId && _timeLeftListenable != null) {
-      return;
-    }
-    if (_timeLeftListenable != null && _timeListener != null) {
-      _timeLeftListenable!.removeListener(_timeListener!);
-    }
-    _sessionId = sessionId;
-    _timeLeftListenable = sessionService.watchSessionTimeLeft(sessionId);
-    _timeListener = () {
-      if (!mounted) return;
-      setState(() {});
-    };
-    _timeLeftListenable!.addListener(_timeListener!);
-  }
 
   Future<void> _saveVitals() async {
     if (!_formKey.currentState!.validate()) {
@@ -70,16 +50,6 @@ class _VitalsPageState extends State<VitalsPage> {
         temperature: parsedTemperature,
       );
 
-      if (_sessionId != null) {
-        sessionService.addSessionVitalsMap(_sessionId!, {
-          'heart_rate': parsedHeartRate,
-          'blood_pressure': _bloodPressure,
-          'respiratory_rate': parsedRespiratoryRate,
-          'temperature': parsedTemperature,
-          'recorded_at': DateTime.now().toIso8601String(),
-        });
-      }
-
       if (!mounted) {
         return;
       }
@@ -108,8 +78,8 @@ class _VitalsPageState extends State<VitalsPage> {
   Widget build(BuildContext context) {
     // pick up session id if provided
     final args = ModalRoute.of(context)?.settings.arguments;
-    if (args is String) {
-      _attachSessionTimer(args);
+    if (args is String && _sessionId != args) {
+      _sessionId = args;
     }
     return Scaffold(
       appBar: AppBar(
@@ -132,16 +102,7 @@ class _VitalsPageState extends State<VitalsPage> {
                     color: Colors.blue.shade50,
                     child: Padding(
                       padding: const EdgeInsets.all(12.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('Recording vitals for session: $_sessionId'),
-                          Text(
-                            'Time left: ${sessionService.formatDurationShort(_timeLeftListenable?.value)}',
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ],
-                      ),
+                      child: Text('Recording vitals for session: $_sessionId'),
                     ),
                   ),
                 ),
