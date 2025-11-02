@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'vitals_controller.dart';
+import '../../services/session_service.dart';
 
 class VitalsPage extends StatefulWidget {
   const VitalsPage({super.key});
@@ -17,6 +18,7 @@ class _VitalsPageState extends State<VitalsPage> {
   String _temperature = '';
   bool _isSaving = false;
   String? _sessionId;
+  Session? _session;
 
   Future<void> _saveVitals() async {
     if (!_formKey.currentState!.validate()) {
@@ -50,6 +52,17 @@ class _VitalsPageState extends State<VitalsPage> {
         temperature: parsedTemperature,
       );
 
+      // Save vitals to session if session exists
+      if (_session != null) {
+        _session!.addVitals({
+          'heartRate': parsedHeartRate,
+          'bloodPressure': _bloodPressure,
+          'respiratoryRate': parsedRespiratoryRate,
+          'temperature': parsedTemperature,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+      }
+
       if (!mounted) {
         return;
       }
@@ -75,12 +88,18 @@ class _VitalsPageState extends State<VitalsPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    // pick up session id if provided
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Load session if session ID is provided
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args is String && _sessionId != args) {
       _sessionId = args;
+      _session = sessionService.findSessionById(args);
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Patient Vitals'),
@@ -95,14 +114,38 @@ class _VitalsPageState extends State<VitalsPage> {
           key: _formKey,
           child: ListView(
             children: [
-              if (_sessionId != null)
+              if (_session != null)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 12.0),
+                  padding: const EdgeInsets.only(bottom: 16.0),
                   child: Card(
                     color: Colors.blue.shade50,
                     child: Padding(
                       padding: const EdgeInsets.all(12.0),
-                      child: Text('Recording vitals for session: $_sessionId'),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.access_time, size: 18),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Active Session: ${_session!.patientName}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Vitals will be recorded for this session',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
