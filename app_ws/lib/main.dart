@@ -3,10 +3,12 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config/supabase_env.dart';
+import 'features/chart/index.dart';
 import 'features/home/index.dart';
 import 'features/login/index.dart';
 import 'features/patient_info/index.dart';
 import 'features/report/index.dart';
+import 'features/sessions/index.dart';
 import 'features/vitals/index.dart';
 
 Future<void> main() async {
@@ -67,7 +69,9 @@ class EMSNotesApp extends StatelessWidget {
         '/home': (context) => const HomePage(),
         '/patient-info': (context) => const PatientInfoPage(),
         '/vitals': (context) => const VitalsPage(),
+        '/chart': (context) => const ChartPage(),
         '/report': (context) => const ReportPage(),
+        '/sessions': (context) => const SessionsPage(),
       },
     );
   }

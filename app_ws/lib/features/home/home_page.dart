@@ -70,12 +70,7 @@ class HomePage extends StatelessWidget {
                 icon: Icons.history,
                 gradientColors: [Colors.blueGrey.shade400, Colors.blueGrey.shade600],
                 onTap: () {
-                  // TODO: Navigate to session history page
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Session History feature coming soon!'),
-                    ),
-                  );
+                  Navigator.of(context).pushNamed('/sessions');
                 },
               ),
             ],
