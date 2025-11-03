@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import '../../config/app_config.dart';
 import '../../services/session_service.dart';
 import 'patient_info_controller.dart';
@@ -35,37 +36,42 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
 
   void _startTimer() {
     if (_timerStarted) return;
-    
-    setState(() {
-      _timerStarted = true;
-      _timeRemaining = AppConfig.patientInfoTimerDuration;
-    });
 
-    // Create a session when user starts entering patient info
-    _sessionId = DateTime.now().millisecondsSinceEpoch.toString();
-    final session = Session(
-      id: _sessionId!,
-      patientName: _name.isNotEmpty ? _name : 'Unnamed Patient',
-    );
-    sessionService.addSession(session);
-
-    // Start countdown timer
-    _reminderTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
+    // Defer state change so first keystroke isn't interrupted.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
 
       setState(() {
-        if (_timeRemaining.inSeconds <= 0) {
+        _timerStarted = true;
+        _timeRemaining = AppConfig.patientInfoTimerDuration;
+      });
+
+      // Create a session when user starts entering patient info
+      _sessionId = DateTime.now().millisecondsSinceEpoch.toString();
+      final session = Session(
+        id: _sessionId!,
+        patientName: _name.isNotEmpty ? _name : 'Unnamed Patient',
+      );
+      sessionService.addSession(session);
+
+      // Start countdown timer
+      _reminderTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (!mounted) {
           timer.cancel();
-          if (!_reminderShown) {
-            _showReminderDialog();
-            _reminderShown = true;
-          }
-        } else {
-          _timeRemaining = Duration(seconds: _timeRemaining.inSeconds - 1);
+          return;
         }
+
+        setState(() {
+          if (_timeRemaining.inSeconds <= 0) {
+            timer.cancel();
+            if (!_reminderShown) {
+              _showReminderDialog();
+              _reminderShown = true;
+            }
+          } else {
+            _timeRemaining = Duration(seconds: _timeRemaining.inSeconds - 1);
+          }
+        });
       });
     });
   }
@@ -242,35 +248,43 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
           key: _formKey,
           child: ListView(
             children: [
-              // Timer display
-              if (_timerStarted)
-                Card(
-                  color: Colors.blue.shade50,
-                  margin: const EdgeInsets.only(bottom: 16.0),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12.0),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.timer,
-                          color: _timeRemaining.inSeconds <= 60
-                              ? Colors.red
-                              : Colors.blue,
-                        ),
-                        const SizedBox(width: 8.0),
-                        Text(
-                          'Vitals reminder in: ${_formatDuration(_timeRemaining)}',
+              // Timer display placeholder (remains in layout from the start)
+              Card(
+                color: Colors.blue.shade50,
+                margin: const EdgeInsets.only(bottom: 16.0),
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.timer,
+                        color: _timerStarted
+                            ? (_timeRemaining.inSeconds <= 60
+                                ? Colors.red
+                                : Colors.blue)
+                            : Colors.grey,
+                      ),
+                      const SizedBox(width: 8.0),
+                      Expanded(
+                        child: Text(
+                          _timerStarted
+                              ? 'Vitals reminder in: ${_formatDuration(_timeRemaining)}'
+                              : 'Timer will start as soon as you begin entering patient information.',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: _timeRemaining.inSeconds <= 60
-                                ? Colors.red
-                                : Colors.blue.shade900,
+                            color: _timerStarted
+                                ? (_timeRemaining.inSeconds <= 60
+                                    ? Colors.red
+                                    : Colors.blue.shade900)
+                                : Colors.grey.shade700,
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
+              ),
               TextFormField(
                 decoration: const InputDecoration(
                   labelText: 'Patient Name',
