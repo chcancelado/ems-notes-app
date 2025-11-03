@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../config/app_config.dart';
 import '../../services/session_service.dart';
 import 'patient_info_controller.dart';
 
@@ -22,7 +23,7 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
   // Session and timer management
   String? _sessionId;
   Timer? _reminderTimer;
-  Duration _timeRemaining = const Duration(minutes: 5);
+  Duration _timeRemaining = AppConfig.patientInfoTimerDuration;
   bool _timerStarted = false;
   bool _reminderShown = false;
 
@@ -37,7 +38,7 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
     
     setState(() {
       _timerStarted = true;
-      _timeRemaining = const Duration(minutes: 5);
+      _timeRemaining = AppConfig.patientInfoTimerDuration;
     });
 
     // Create a session when user starts entering patient info
