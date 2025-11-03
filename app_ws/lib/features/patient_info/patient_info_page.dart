@@ -34,25 +34,21 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
     super.dispose();
   }
 
-  void _startTimer() {
-    if (_timerStarted) return;
+  void _startTimer({bool deferForFocus = false}) {
+    if (_timerStarted) {
+      _ensureSessionCreated();
+      return;
+    }
 
-    // Defer state change so first keystroke isn't interrupted.
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+    void initializeTimer() {
+      if (!mounted || _timerStarted) return;
 
       setState(() {
         _timerStarted = true;
         _timeRemaining = AppConfig.patientInfoTimerDuration;
       });
 
-      // Create a session when user starts entering patient info
-      _sessionId = DateTime.now().millisecondsSinceEpoch.toString();
-      final session = Session(
-        id: _sessionId!,
-        patientName: _name.isNotEmpty ? _name : 'Unnamed Patient',
-      );
-      sessionService.addSession(session);
+      _ensureSessionCreated();
 
       // Start countdown timer
       _reminderTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -73,7 +69,87 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
           }
         });
       });
-    });
+    }
+
+    if (deferForFocus) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        initializeTimer();
+      });
+    } else {
+      initializeTimer();
+    }
+  }
+
+  void _ensureSessionCreated() {
+    _sessionId ??= DateTime.now().millisecondsSinceEpoch.toString();
+
+    final existingSession = sessionService.findSessionById(_sessionId!);
+    if (existingSession == null) {
+      final session = Session(
+        id: _sessionId!,
+        patientName: _name.isNotEmpty ? _name : 'Unnamed Patient',
+      );
+      sessionService.addSession(session);
+    }
+  }
+
+  void _persistCurrentPatientInfoToSession() {
+    if (_sessionId == null) return;
+
+    final session = sessionService.findSessionById(_sessionId!);
+    if (session == null) return;
+
+    final Map<String, dynamic> info = {
+      'name': _name,
+      'chiefComplaint': _chiefComplaint,
+    };
+
+    final parsedAge = int.tryParse(_age);
+    if (parsedAge != null) {
+      info['age'] = parsedAge;
+    }
+
+    session.setPatientInfo(info);
+  }
+
+  Future<void> _navigateToVitals() async {
+    FocusScope.of(context).unfocus();
+    if (!_timerStarted) {
+      _startTimer();
+    } else {
+      _ensureSessionCreated();
+    }
+
+    _persistCurrentPatientInfoToSession();
+
+    if (_sessionId == null) {
+      return;
+    }
+
+    await Navigator.of(context).pushNamed(
+      '/vitals',
+      arguments: _sessionId,
+    );
+  }
+
+  Future<void> _navigateToChart() async {
+    FocusScope.of(context).unfocus();
+    if (!_timerStarted) {
+      _startTimer();
+    } else {
+      _ensureSessionCreated();
+    }
+
+    _persistCurrentPatientInfoToSession();
+
+    if (_sessionId == null) {
+      return;
+    }
+
+    await Navigator.of(context).pushNamed(
+      '/chart',
+      arguments: _sessionId,
+    );
   }
 
   void _showReminderDialog() {
@@ -285,6 +361,26 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                   ),
                 ),
               ),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _navigateToVitals,
+                      icon: const Icon(Icons.monitor_heart),
+                      label: const Text('Go to Vitals'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _navigateToChart,
+                      icon: const Icon(Icons.folder_shared),
+                      label: const Text('Open Chart'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
               TextFormField(
                 decoration: const InputDecoration(
                   labelText: 'Patient Name',
@@ -292,7 +388,7 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                 ),
                 onChanged: (value) {
                   _name = value;
-                  if (!_timerStarted) _startTimer();
+                  if (!_timerStarted) _startTimer(deferForFocus: true);
                 },
                 validator: (value) {
                   if (value == null || value.isEmpty) {
@@ -310,7 +406,7 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                 keyboardType: TextInputType.number,
                 onChanged: (value) {
                   _age = value;
-                  if (!_timerStarted) _startTimer();
+                  if (!_timerStarted) _startTimer(deferForFocus: true);
                 },
                 validator: (value) {
                   if (value == null || value.isEmpty) {
@@ -331,7 +427,7 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                 maxLines: 3,
                 onChanged: (value) {
                   _chiefComplaint = value;
-                  if (!_timerStarted) _startTimer();
+                  if (!_timerStarted) _startTimer(deferForFocus: true);
                 },
                 validator: (value) {
                   if (value == null || value.isEmpty) {
