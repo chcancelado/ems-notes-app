@@ -5,6 +5,7 @@ import '../../services/session_service.dart';
 import '../../services/supabase_session_repository.dart';
 import '../../widgets/app_input_decorations.dart';
 import '../../widgets/first_aid_dialog.dart';
+import '../../widgets/patient_summary_dialog.dart';
 import '../../widgets/sidebar_layout.dart';
 import '../../widgets/unsaved_changes_dialog.dart';
 
@@ -126,8 +127,7 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
         final parsed = DateTime.tryParse(dobString);
         if (parsed != null) {
           _dateOfBirth = parsed;
-          _dobController.text =
-              '${parsed.month}/${parsed.day}/${parsed.year}';
+          _dobController.text = '${parsed.month}/${parsed.day}/${parsed.year}';
         }
       }
       _sex = (patientInfo['sex'] as String?) ?? 'U';
@@ -237,8 +237,7 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
     if (picked != null) {
       setState(() {
         _dateOfBirth = picked;
-        _dobController.text =
-            '${picked.month}/${picked.day}/${picked.year}';
+        _dobController.text = '${picked.month}/${picked.day}/${picked.year}';
         _hasUnsavedChanges = true;
       });
     }
@@ -266,17 +265,17 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
 
     final feetText = _heightFeetController.text.trim();
     final inchesText = _heightInchesController.text.trim();
-    final int heightFeet =
-        feetText.isEmpty ? 0 : int.parse(feetText); // validated already
-    final int heightInches =
-        inchesText.isEmpty ? 0 : int.parse(inchesText); // validated already
+    final int heightFeet = feetText.isEmpty
+        ? 0
+        : int.parse(feetText); // validated already
+    final int heightInches = inchesText.isEmpty
+        ? 0
+        : int.parse(inchesText); // validated already
     final totalHeight = (heightFeet * 12) + heightInches;
 
     if (totalHeight <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter the patient\'s height.'),
-        ),
+        const SnackBar(content: Text('Please enter the patient\'s height.')),
       );
       return;
     }
@@ -307,10 +306,9 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
       });
 
       if (!mounted) return;
-      Navigator.of(context).pushReplacementNamed(
-        '/vitals',
-        arguments: {'sessionId': _sessionId},
-      );
+      Navigator.of(
+        context,
+      ).pushReplacementNamed('/vitals', arguments: {'sessionId': _sessionId});
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -353,6 +351,63 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
     await showFirstAidDialog(context, type);
   }
 
+  Future<void> _showPatientSummary() async {
+    final session = _sessionId == null
+        ? sessionService.latestSession
+        : sessionService.findSessionById(_sessionId!);
+
+    final feet = int.tryParse(_heightFeetController.text.trim());
+    final inches = int.tryParse(_heightInchesController.text.trim());
+    int? totalHeight;
+    if ((feet ?? 0) > 0 || (inches ?? 0) > 0) {
+      final safeFeet = feet ?? 0;
+      final safeInches = inches ?? 0;
+      totalHeight = (safeFeet * 12) + safeInches;
+    }
+
+    final weight = int.tryParse(_weightController.text.trim());
+
+    final patientDraft = <String, dynamic>{};
+    final name = _nameController.text.trim();
+    if (name.isNotEmpty) {
+      patientDraft['name'] = name;
+    }
+    if (_dateOfBirth != null) {
+      patientDraft['date_of_birth'] = _dateOfBirth;
+    }
+    if (_sex.isNotEmpty) {
+      patientDraft['sex'] = _sex;
+    }
+    if (totalHeight != null && totalHeight > 0) {
+      patientDraft['height_in_inches'] = totalHeight;
+    }
+    if (weight != null && weight > 0) {
+      patientDraft['weight_in_pounds'] = weight;
+    }
+    final allergies = _allergiesController.text.trim();
+    if (allergies.isNotEmpty) {
+      patientDraft['allergies'] = allergies;
+    }
+    final medications = _medicationsController.text.trim();
+    if (medications.isNotEmpty) {
+      patientDraft['medications'] = medications;
+    }
+    final history = _medicalHistoryController.text.trim();
+    if (history.isNotEmpty) {
+      patientDraft['medical_history'] = history;
+    }
+    final complaint = _chiefComplaintController.text.trim();
+    if (complaint.isNotEmpty) {
+      patientDraft['chief_complaint'] = complaint;
+    }
+
+    await showPatientSummaryDialog(
+      context,
+      session: session,
+      patientDraft: patientDraft.isEmpty ? null : patientDraft,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -370,304 +425,355 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
           ? const Center(child: CircularProgressIndicator())
           : Align(
               alignment: Alignment.topCenter,
-              child: SingleChildScrollView(
+              child: Padding(
                 padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 720),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: () => _showFirstAid(),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: firstAidAccentColor,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _showPatientSummary,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: firstAidAccentColor,
+                                backgroundColor: Colors.white,
+                                side: const BorderSide(
+                                  color: firstAidAccentColor,
+                                  width: 2,
+                                ),
+                                minimumSize: const Size.fromHeight(48),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                            ),
-                            icon: const Icon(Icons.health_and_safety),
-                            label: const Text('Show First Aid'),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Patient Details',
-                          style: theme.textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _nameController,
-                          decoration: AppInputDecorations.filledField(
-                            context,
-                            label: 'Name',
-                          ),
-                          style: AppInputDecorations.fieldTextStyle,
-                          onChanged: (_) => _handleFieldChange(),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'Please enter the patient\'s name';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        GestureDetector(
-                          onTap: _pickDateOfBirth,
-                          child: AbsorbPointer(
-                            child: TextFormField(
-                              controller: _dobController,
-                              decoration: AppInputDecorations.filledField(
-                                context,
-                                label: 'Date of Birth',
-                                suffixIcon: const Icon(Icons.calendar_today),
-                              ),
-                              style: AppInputDecorations.fieldTextStyle,
-                              onChanged: (_) => _handleFieldChange(),
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Select the date of birth';
-                                }
-                                return null;
-                              },
+                              icon: const Icon(Icons.receipt_long),
+                              label: const Text('Show Patient Summary'),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 16),
-                        DropdownButtonFormField<String>(
-                          value: _sex,
-                          decoration: AppInputDecorations.filledField(
-                            context,
-                            label: 'Sex',
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () => _showFirstAid(),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: firstAidAccentColor,
+                                foregroundColor: Colors.white,
+                                minimumSize: const Size.fromHeight(48),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              icon: const Icon(Icons.health_and_safety),
+                              label: const Text('Show First Aid'),
+                            ),
                           ),
-                          style: AppInputDecorations.fieldTextStyle,
-                          items: const [
-                            DropdownMenuItem(
-                              value: 'M',
-                              child: Text(
-                                'Male',
-                                style: AppInputDecorations.fieldTextStyle,
-                              ),
-                            ),
-                            DropdownMenuItem(
-                              value: 'F',
-                              child: Text(
-                                'Female',
-                                style: AppInputDecorations.fieldTextStyle,
-                              ),
-                            ),
-                            DropdownMenuItem(
-                              value: 'O',
-                              child: Text(
-                                'Other',
-                                style: AppInputDecorations.fieldTextStyle,
-                              ),
-                            ),
-                            DropdownMenuItem(
-                              value: 'U',
-                              child: Text(
-                                'Unknown',
-                                style: AppInputDecorations.fieldTextStyle,
-                              ),
-                            ),
-                          ],
-                          onChanged: (value) {
-                            if (value == null) return;
-                            setState(() {
-                              _sex = value;
-                              if (!_isHydrating) {
-                                _hasUnsavedChanges = true;
-                              }
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Row(
-                                children: [
-                                  Expanded(
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Expanded(
+                        child: Form(
+                          key: _formKey,
+                          child: SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text(
+                                  'Patient Details',
+                                  style: theme.textTheme.headlineSmall
+                                      ?.copyWith(fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 16),
+                                TextFormField(
+                                  controller: _nameController,
+                                  decoration: AppInputDecorations.filledField(
+                                    context,
+                                    label: 'Name',
+                                  ),
+                                  style: AppInputDecorations.fieldTextStyle,
+                                  onChanged: (_) => _handleFieldChange(),
+                                  validator: (value) {
+                                    if (value == null || value.trim().isEmpty) {
+                                      return 'Please enter the patient'
+                                          's name';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 16),
+                                GestureDetector(
+                                  onTap: _pickDateOfBirth,
+                                  child: AbsorbPointer(
                                     child: TextFormField(
-                                      controller: _heightFeetController,
-                                      decoration: AppInputDecorations
-                                          .filledField(
-                                        context,
-                                        label: 'Height (ft)',
-                                      ),
-                                      style:
-                                          AppInputDecorations.fieldTextStyle,
-                                      keyboardType: TextInputType.number,
-                                      onChanged: (_) => _handleFieldChange(),
-                                      validator: _validateHeightFeet,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: TextFormField(
-                                      controller: _heightInchesController,
-                                      decoration: AppInputDecorations
-                                          .filledField(
-                                        context,
-                                        label: 'Height (in)',
-                                      ),
-                                      style:
-                                          AppInputDecorations.fieldTextStyle,
-                                      keyboardType: TextInputType.number,
-                                      onChanged: (_) => _handleFieldChange(),
-                                      validator: _validateHeightInches,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: TextFormField(
-                                controller: _weightController,
-                                decoration: AppInputDecorations.filledField(
-                                  context,
-                                  label: 'Weight (lbs)',
-                                ),
-                                style: AppInputDecorations.fieldTextStyle,
-                                keyboardType: TextInputType.number,
-                                onChanged: (_) => _handleFieldChange(),
-                                validator: (value) {
-                                  if (value == null || value.trim().isEmpty) {
-                                    return 'Enter weight';
-                                  }
-                                  final parsed = int.tryParse(value);
-                                  if (parsed == null || parsed <= 0) {
-                                    return 'Enter a positive number';
-                                  }
-                                  return null;
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _allergiesController,
-                          decoration: AppInputDecorations.filledField(
-                            context,
-                            label: 'Allergies',
-                            hintText: 'List known allergies',
-                          ),
-                          style: AppInputDecorations.fieldTextStyle,
-                          maxLines: 2,
-                          onChanged: (_) => _handleFieldChange(),
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _medicationsController,
-                          decoration: AppInputDecorations.filledField(
-                            context,
-                            label: 'Medications',
-                            hintText: 'List current medications',
-                          ),
-                          style: AppInputDecorations.fieldTextStyle,
-                          maxLines: 2,
-                          onChanged: (_) => _handleFieldChange(),
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _medicalHistoryController,
-                          decoration: AppInputDecorations.filledField(
-                            context,
-                            label: 'Medical History',
-                            hintText: 'Summarize relevant medical history',
-                          ),
-                          style: AppInputDecorations.fieldTextStyle,
-                          maxLines: 3,
-                          onChanged: (_) => _handleFieldChange(),
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _chiefComplaintController,
-                          decoration: AppInputDecorations.filledField(
-                            context,
-                            label: 'Chief Complaint',
-                          ),
-                          style: AppInputDecorations.fieldTextStyle,
-                          maxLines: 3,
-                          onChanged: (_) => _handleFieldChange(),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'Enter the chief complaint';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 24),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: _isSaving ? null : _goBackToIncident,
-                                style: OutlinedButton.styleFrom(
-                                  minimumSize: const Size.fromHeight(48),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                                icon: const Icon(Icons.arrow_back),
-                                label:
-                                    const Text('Back to Incident Information'),
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: ElevatedButton(
-                                onPressed: _isSaving ? null : _saveAndContinue,
-                                style: ElevatedButton.styleFrom(
-                                  minimumSize: const Size.fromHeight(48),
-                                  backgroundColor:
-                                      Theme.of(context).colorScheme.primary,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                                child: _isSaving
-                                    ? const SizedBox(
-                                        height: 20,
-                                        width: 20,
-                                        child: CircularProgressIndicator(
-                                            strokeWidth: 2),
-                                      )
-                                    : Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Text(
-                                            'Continue to Vitals',
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.w600,
+                                      controller: _dobController,
+                                      decoration:
+                                          AppInputDecorations.filledField(
+                                            context,
+                                            label: 'Date of Birth',
+                                            suffixIcon: const Icon(
+                                              Icons.calendar_today,
                                             ),
                                           ),
-                                          const SizedBox(width: 8),
-                                          const Icon(Icons.arrow_forward),
+                                      style: AppInputDecorations.fieldTextStyle,
+                                      onChanged: (_) => _handleFieldChange(),
+                                      validator: (value) {
+                                        if (value == null || value.isEmpty) {
+                                          return 'Select the date of birth';
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                DropdownButtonFormField<String>(
+                                  value: _sex,
+                                  decoration: AppInputDecorations.filledField(
+                                    context,
+                                    label: 'Sex',
+                                  ),
+                                  style: AppInputDecorations.fieldTextStyle,
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: 'M',
+                                      child: Text(
+                                        'Male',
+                                        style:
+                                            AppInputDecorations.fieldTextStyle,
+                                      ),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'F',
+                                      child: Text(
+                                        'Female',
+                                        style:
+                                            AppInputDecorations.fieldTextStyle,
+                                      ),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'O',
+                                      child: Text(
+                                        'Other',
+                                        style:
+                                            AppInputDecorations.fieldTextStyle,
+                                      ),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'U',
+                                      child: Text(
+                                        'Unknown',
+                                        style:
+                                            AppInputDecorations.fieldTextStyle,
+                                      ),
+                                    ),
+                                  ],
+                                  onChanged: (value) {
+                                    if (value == null) return;
+                                    setState(() {
+                                      _sex = value;
+                                      if (!_isHydrating) {
+                                        _hasUnsavedChanges = true;
+                                      }
+                                    });
+                                  },
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: TextFormField(
+                                              controller: _heightFeetController,
+                                              decoration:
+                                                  AppInputDecorations.filledField(
+                                                    context,
+                                                    label: 'Height (ft)',
+                                                  ),
+                                              style: AppInputDecorations
+                                                  .fieldTextStyle,
+                                              keyboardType:
+                                                  TextInputType.number,
+                                              onChanged: (_) =>
+                                                  _handleFieldChange(),
+                                              validator: _validateHeightFeet,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: TextFormField(
+                                              controller:
+                                                  _heightInchesController,
+                                              decoration:
+                                                  AppInputDecorations.filledField(
+                                                    context,
+                                                    label: 'Height (in)',
+                                                  ),
+                                              style: AppInputDecorations
+                                                  .fieldTextStyle,
+                                              keyboardType:
+                                                  TextInputType.number,
+                                              onChanged: (_) =>
+                                                  _handleFieldChange(),
+                                              validator: _validateHeightInches,
+                                            ),
+                                          ),
                                         ],
                                       ),
-                              ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _weightController,
+                                        decoration:
+                                            AppInputDecorations.filledField(
+                                              context,
+                                              label: 'Weight (lbs)',
+                                            ),
+                                        style:
+                                            AppInputDecorations.fieldTextStyle,
+                                        keyboardType: TextInputType.number,
+                                        onChanged: (_) => _handleFieldChange(),
+                                        validator: (value) {
+                                          if (value == null ||
+                                              value.trim().isEmpty) {
+                                            return 'Enter weight';
+                                          }
+                                          final parsed = int.tryParse(value);
+                                          if (parsed == null || parsed <= 0) {
+                                            return 'Enter a positive number';
+                                          }
+                                          return null;
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                TextFormField(
+                                  controller: _allergiesController,
+                                  decoration: AppInputDecorations.filledField(
+                                    context,
+                                    label: 'Allergies',
+                                    hintText: 'List known allergies',
+                                  ),
+                                  style: AppInputDecorations.fieldTextStyle,
+                                  maxLines: 2,
+                                  onChanged: (_) => _handleFieldChange(),
+                                ),
+                                const SizedBox(height: 16),
+                                TextFormField(
+                                  controller: _medicationsController,
+                                  decoration: AppInputDecorations.filledField(
+                                    context,
+                                    label: 'Medications',
+                                    hintText: 'List current medications',
+                                  ),
+                                  style: AppInputDecorations.fieldTextStyle,
+                                  maxLines: 2,
+                                  onChanged: (_) => _handleFieldChange(),
+                                ),
+                                const SizedBox(height: 16),
+                                TextFormField(
+                                  controller: _medicalHistoryController,
+                                  decoration: AppInputDecorations.filledField(
+                                    context,
+                                    label: 'Medical History',
+                                    hintText:
+                                        'Summarize relevant medical history',
+                                  ),
+                                  style: AppInputDecorations.fieldTextStyle,
+                                  maxLines: 3,
+                                  onChanged: (_) => _handleFieldChange(),
+                                ),
+                                const SizedBox(height: 16),
+                                TextFormField(
+                                  controller: _chiefComplaintController,
+                                  decoration: AppInputDecorations.filledField(
+                                    context,
+                                    label: 'Chief Complaint',
+                                  ),
+                                  style: AppInputDecorations.fieldTextStyle,
+                                  maxLines: 3,
+                                  onChanged: (_) => _handleFieldChange(),
+                                  validator: (value) {
+                                    if (value == null || value.trim().isEmpty) {
+                                      return 'Enter the chief complaint';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 24),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _isSaving ? null : _goBackToIncident,
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size.fromHeight(48),
+                                side: BorderSide(
+                                  color: theme.colorScheme.primary,
+                                  width: 2,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              icon: const Icon(Icons.arrow_back),
+                              label: const Text('Back to Incident Information'),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: _isSaving ? null : _saveAndContinue,
+                              style: ElevatedButton.styleFrom(
+                                minimumSize: const Size.fromHeight(48),
+                                backgroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.primary,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: _isSaving
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Text(
+                                          'Continue to Vitals',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        const Icon(Icons.arrow_forward),
+                                      ],
+                                    ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ),

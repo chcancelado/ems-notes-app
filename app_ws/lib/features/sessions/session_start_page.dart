@@ -5,6 +5,7 @@ import '../../services/session_service.dart';
 import '../../services/supabase_session_repository.dart';
 import '../../widgets/app_input_decorations.dart';
 import '../../widgets/first_aid_dialog.dart';
+import '../../widgets/patient_summary_dialog.dart';
 import '../../widgets/sidebar_layout.dart';
 import '../../widgets/unsaved_changes_dialog.dart';
 
@@ -151,11 +152,51 @@ class _SessionStartPageState extends State<SessionStartPage> {
   Future<void> _showFirstAid() async {
     if (_selectedIncidentType.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Select an incident type to view first aid.')),
+        const SnackBar(
+          content: Text('Select an incident type to view first aid.'),
+        ),
       );
       return;
     }
     await showFirstAidDialog(context, _selectedIncidentType);
+  }
+
+  Future<void> _showPatientSummary() async {
+    final session = _sessionId == null
+        ? sessionService.latestSession
+        : sessionService.findSessionById(_sessionId!);
+
+    DateTime? arrivalDateTime;
+    if (_incidentDate != null && _arrivalTime != null) {
+      arrivalDateTime = DateTime(
+        _incidentDate!.year,
+        _incidentDate!.month,
+        _incidentDate!.day,
+        _arrivalTime!.hour,
+        _arrivalTime!.minute,
+      );
+    }
+
+    final incidentDraft = <String, dynamic>{};
+    if (_incidentDate != null) {
+      incidentDraft['incident_date'] = _incidentDate;
+    }
+    if (arrivalDateTime != null) {
+      incidentDraft['arrival_at'] = arrivalDateTime;
+    }
+    final address = _addressController.text.trim();
+    if (address.isNotEmpty) {
+      incidentDraft['address'] = address;
+    }
+    if (_selectedIncidentType.isNotEmpty) {
+      incidentDraft['type'] = _selectedIncidentType;
+    }
+
+    await showPatientSummaryDialog(
+      context,
+      session: session,
+      incidentDraft: incidentDraft.isEmpty ? null : incidentDraft,
+    );
   }
 
   Future<bool> _confirmLeave() async {
@@ -271,159 +312,195 @@ class _SessionStartPageState extends State<SessionStartPage> {
       },
       body: Align(
         alignment: Alignment.topCenter,
-        child: SingleChildScrollView(
+        child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 36, 24, 24),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 600),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () => _showFirstAid(),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: firstAidAccentColor,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                      ),
-                      icon: const Icon(Icons.health_and_safety),
-                      label: const Text('Show First Aid'),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Incident Information',
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  OutlinedButton.icon(
-                    onPressed: _pickIncidentDate,
-                    icon: const Icon(Icons.event),
-                    label: Text(incidentLabel),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: _pickArrivalTime,
-                    icon: const Icon(Icons.schedule),
-                    label: Text(arrivalLabel),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _addressController,
-                    decoration: AppInputDecorations.filledField(
-                      context,
-                      label: 'Incident Address',
-                    ),
-                    style: AppInputDecorations.fieldTextStyle,
-                    maxLines: 2,
-                    onChanged: (_) => _handleFieldChange(),
-                    validator: (value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return 'Please enter the incident address';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    value: _selectedIncidentType.isEmpty
-                        ? null
-                        : _selectedIncidentType,
-                    decoration: AppInputDecorations.filledField(
-                      context,
-                      label: 'Incident Type',
-                    ),
-                    hint: const Text('Select an incident type'),
-                    items: incidentOptions
-                        .map(
-                          (type) => DropdownMenuItem<String>(
-                            value: type,
-                            child: Text(type),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _showPatientSummary,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: firstAidAccentColor,
+                          backgroundColor: Colors.white,
+                          side: const BorderSide(
+                            color: firstAidAccentColor,
+                            width: 2,
                           ),
-                        )
-                        .toList(),
-                    onChanged: (value) {
-                      if (value == null) return;
-                      setState(() {
-                        _selectedIncidentType = value;
-                      });
-                      _handleFieldChange();
-                    },
-                    validator: (value) {
-                      if ((value ?? '').isEmpty) {
-                        return 'Please select the incident type';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _isSaving ? null : _discard,
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(48),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                          minimumSize: const Size.fromHeight(48),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        icon: const Icon(Icons.receipt_long),
+                        label: const Text('Show Patient Summary'),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => _showFirstAid(),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: firstAidAccentColor,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size.fromHeight(48),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        icon: const Icon(Icons.health_and_safety),
+                        label: const Text('Show First Aid'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: Form(
+                    key: _formKey,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'Incident Information',
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
-                          icon: const Icon(Icons.close_rounded),
-                          label: const Text('Discard Session'),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: _isSaving ? null : _submit,
-                          style: ElevatedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(48),
-                            backgroundColor:
-                                Theme.of(context).colorScheme.primary,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                          const SizedBox(height: 16),
+                          OutlinedButton.icon(
+                            onPressed: _pickIncidentDate,
+                            icon: const Icon(Icons.event),
+                            label: Text(incidentLabel),
                           ),
-                          child: _isSaving
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2),
+                          const SizedBox(height: 12),
+                          OutlinedButton.icon(
+                            onPressed: _pickArrivalTime,
+                            icon: const Icon(Icons.schedule),
+                            label: Text(arrivalLabel),
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _addressController,
+                            decoration: AppInputDecorations.filledField(
+                              context,
+                              label: 'Incident Address',
+                            ),
+                            style: AppInputDecorations.fieldTextStyle,
+                            maxLines: 2,
+                            onChanged: (_) => _handleFieldChange(),
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Please enter the incident address';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          DropdownButtonFormField<String>(
+                            value: _selectedIncidentType.isEmpty
+                                ? null
+                                : _selectedIncidentType,
+                            decoration: AppInputDecorations.filledField(
+                              context,
+                              label: 'Incident Type',
+                            ),
+                            hint: const Text('Select an incident type'),
+                            items: incidentOptions
+                                .map(
+                                  (type) => DropdownMenuItem<String>(
+                                    value: type,
+                                    child: Text(type),
+                                  ),
                                 )
-                              : Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Text(
-                                      'Continue Patient Information',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    const Icon(Icons.arrow_forward),
-                                  ],
-                                ),
-                        ),
+                                .toList(),
+                            onChanged: (value) {
+                              if (value == null) return;
+                              setState(() {
+                                _selectedIncidentType = value;
+                              });
+                              _handleFieldChange();
+                            },
+                            validator: (value) {
+                              if ((value ?? '').isEmpty) {
+                                return 'Please select the incident type';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 24),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _isSaving ? null : _discard,
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48),
+                          side: BorderSide(
+                            color: theme.colorScheme.primary,
+                            width: 2,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        icon: const Icon(Icons.close_rounded),
+                        label: const Text('Discard Session'),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _isSaving ? null : _submit,
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48),
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.primary,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: _isSaving
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Text(
+                                    'Continue Patient Information',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const Icon(Icons.arrow_forward),
+                                ],
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ),
