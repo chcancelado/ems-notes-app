@@ -1,178 +1,168 @@
--- ============================================================
--- Create and use new schema "updated_all"
--- ============================================================
-CREATE SCHEMA IF NOT EXISTS updated_all;
-SET search_path TO updated_all;
+-- Enable extensions required for UUID generation
+create extension if not exists "pgcrypto";
 
--- Enable extension for UUID generation
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+-- Tear down legacy objects from the previous schema
+drop table if exists public.session_medical_history cascade;
+drop table if exists public.reports cascade;
+drop table if exists public.vitals cascade;
+drop table if exists public.patient_info cascade;
 
--- ============================================================
 -- Core EMS session representing a single encounter
--- ============================================================
-CREATE TABLE IF NOT EXISTS updated_all.sessions (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  incident_date date NOT NULL,
+create table if not exists public.sessions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  incident_date date not null,
   arrival_at timestamptz,
-  incident_address text NOT NULL,
-  incident_type text NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT timezone('utc', now()),
-  updated_at timestamptz NOT NULL DEFAULT timezone('utc', now())
+  incident_address text not null,
+  incident_type text not null,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now())
 );
 
-CREATE INDEX IF NOT EXISTS sessions_user_incident_idx
-  ON updated_all.sessions (user_id, incident_date DESC);
+create index if not exists sessions_user_incident_idx
+  on public.sessions (user_id, incident_date desc);
 
-ALTER TABLE updated_all.sessions ENABLE ROW LEVEL SECURITY;
+alter table public.sessions enable row level security;
 
-CREATE POLICY "sessions_select" ON updated_all.sessions
-  FOR SELECT USING (auth.uid() = user_id);
+create policy "sessions_select" on public.sessions
+  for select using (auth.uid() = user_id);
 
-CREATE POLICY "sessions_insert" ON updated_all.sessions
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
+create policy "sessions_insert" on public.sessions
+  for insert with check (auth.uid() = user_id);
 
-CREATE POLICY "sessions_update" ON updated_all.sessions
-  FOR UPDATE USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+create policy "sessions_update" on public.sessions
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
-CREATE POLICY "sessions_delete" ON updated_all.sessions
-  FOR DELETE USING (auth.uid() = user_id);
+create policy "sessions_delete" on public.sessions
+  for delete using (auth.uid() = user_id);
 
--- ============================================================
--- Patient details captured for each session
---   (includes one free-text medical_history field)
--- ============================================================
-CREATE TABLE IF NOT EXISTS updated_all.session_patient_info (
-  session_id uuid PRIMARY KEY REFERENCES updated_all.sessions(id) ON DELETE CASCADE,
-  patient_name text NOT NULL,
-  date_of_birth date NOT NULL,
-  sex char(1) NOT NULL CHECK (sex IN ('M','F','O','U')),
-  height_in_inches smallint NOT NULL CHECK (height_in_inches > 0),
-  weight_in_pounds smallint NOT NULL CHECK (weight_in_pounds > 0),
+-- One-to-one patient details captured for each session
+create table if not exists public.session_patient_info (
+  session_id uuid primary key references public.sessions(id) on delete cascade,
+  patient_name text not null,
+  date_of_birth date not null,
+  sex char(1) not null check (sex in ('M', 'F', 'O', 'U')),
+  height_in_inches smallint not null check (height_in_inches > 0),
+  weight_in_pounds smallint not null check (weight_in_pounds > 0),
   allergies text,
   medications text,
-  medical_history text,  -- merged field replacing separate table
-  chief_complaint text NOT NULL,
-  updated_at timestamptz NOT NULL DEFAULT timezone('utc', now())
+  medical_history text not null default '',
+  chief_complaint text not null,
+  updated_at timestamptz not null default timezone('utc', now())
 );
 
-ALTER TABLE updated_all.session_patient_info ENABLE ROW LEVEL SECURITY;
+alter table public.session_patient_info enable row level security;
 
-CREATE POLICY "session_patient_info_select" ON updated_all.session_patient_info
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1
-      FROM updated_all.sessions s
-      WHERE s.id = session_patient_info.session_id
-        AND s.user_id = auth.uid()
+create policy "session_patient_info_select" on public.session_patient_info
+  for select using (
+    exists (
+      select 1
+      from public.sessions s
+      where s.id = session_patient_info.session_id
+        and s.user_id = auth.uid()
     )
   );
 
-CREATE POLICY "session_patient_info_insert" ON updated_all.session_patient_info
-  FOR INSERT WITH CHECK (
-    EXISTS (
-      SELECT 1
-      FROM updated_all.sessions s
-      WHERE s.id = session_patient_info.session_id
-        AND s.user_id = auth.uid()
+create policy "session_patient_info_insert" on public.session_patient_info
+  for insert with check (
+    exists (
+      select 1
+      from public.sessions s
+      where s.id = session_patient_info.session_id
+        and s.user_id = auth.uid()
     )
   );
 
-CREATE POLICY "session_patient_info_update" ON updated_all.session_patient_info
-  FOR UPDATE USING (
-    EXISTS (
-      SELECT 1
-      FROM updated_all.sessions s
-      WHERE s.id = session_patient_info.session_id
-        AND s.user_id = auth.uid()
+create policy "session_patient_info_update" on public.session_patient_info
+  for update using (
+    exists (
+      select 1
+      from public.sessions s
+      where s.id = session_patient_info.session_id
+        and s.user_id = auth.uid()
     )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1
-      FROM updated_all.sessions s
-      WHERE s.id = session_patient_info.session_id
-        AND s.user_id = auth.uid()
-    )
-  );
-
-CREATE POLICY "session_patient_info_delete" ON updated_all.session_patient_info
-  FOR DELETE USING (
-    EXISTS (
-      SELECT 1
-      FROM updated_all.sessions s
-      WHERE s.id = session_patient_info.session_id
-        AND s.user_id = auth.uid()
+  ) with check (
+    exists (
+      select 1
+      from public.sessions s
+      where s.id = session_patient_info.session_id
+        and s.user_id = auth.uid()
     )
   );
 
--- ============================================================
+create policy "session_patient_info_delete" on public.session_patient_info
+  for delete using (
+    exists (
+      select 1
+      from public.sessions s
+      where s.id = session_patient_info.session_id
+        and s.user_id = auth.uid()
+    )
+  );
+
 -- Multiple vitals snapshots per session
--- ============================================================
-CREATE TABLE IF NOT EXISTS updated_all.session_vitals (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  session_id uuid NOT NULL REFERENCES updated_all.sessions(id) ON DELETE CASCADE,
-  pulse_rate smallint NOT NULL CHECK (pulse_rate >= 0),
-  breathing_rate smallint NOT NULL CHECK (breathing_rate >= 0),
-  blood_pressure_systolic smallint NOT NULL CHECK (blood_pressure_systolic > 0),
-  blood_pressure_diastolic smallint NOT NULL CHECK (blood_pressure_diastolic > 0),
-  spo2 smallint CHECK (spo2 BETWEEN 0 AND 100),
+create table if not exists public.session_vitals (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references public.sessions(id) on delete cascade,
+  pulse_rate smallint not null check (pulse_rate >= 0),
+  breathing_rate smallint not null check (breathing_rate >= 0),
+  blood_pressure_systolic smallint not null check (blood_pressure_systolic > 0),
+  blood_pressure_diastolic smallint not null check (blood_pressure_diastolic > 0),
+  spo2 smallint check (spo2 between 0 and 100),
   blood_glucose smallint,
   temperature smallint,
   notes text,
-  recorded_at timestamptz NOT NULL DEFAULT timezone('utc', now())
+  recorded_at timestamptz not null default timezone('utc', now())
 );
 
-CREATE INDEX IF NOT EXISTS session_vitals_session_idx
-  ON updated_all.session_vitals (session_id, recorded_at DESC);
+create index if not exists session_vitals_session_idx
+  on public.session_vitals (session_id, recorded_at desc);
 
-ALTER TABLE updated_all.session_vitals ENABLE ROW LEVEL SECURITY;
+alter table public.session_vitals enable row level security;
 
-CREATE POLICY "session_vitals_select" ON updated_all.session_vitals
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1
-      FROM updated_all.sessions s
-      WHERE s.id = session_vitals.session_id
-        AND s.user_id = auth.uid()
+create policy "session_vitals_select" on public.session_vitals
+  for select using (
+    exists (
+      select 1
+      from public.sessions s
+      where s.id = session_vitals.session_id
+        and s.user_id = auth.uid()
     )
   );
 
-CREATE POLICY "session_vitals_insert" ON updated_all.session_vitals
-  FOR INSERT WITH CHECK (
-    EXISTS (
-      SELECT 1
-      FROM updated_all.sessions s
-      WHERE s.id = session_vitals.session_id
-        AND s.user_id = auth.uid()
+create policy "session_vitals_insert" on public.session_vitals
+  for insert with check (
+    exists (
+      select 1
+      from public.sessions s
+      where s.id = session_vitals.session_id
+        and s.user_id = auth.uid()
     )
   );
 
-CREATE POLICY "session_vitals_update" ON updated_all.session_vitals
-  FOR UPDATE USING (
-    EXISTS (
-      SELECT 1
-      FROM updated_all.sessions s
-      WHERE s.id = session_vitals.session_id
-        AND s.user_id = auth.uid()
+create policy "session_vitals_update" on public.session_vitals
+  for update using (
+    exists (
+      select 1
+      from public.sessions s
+      where s.id = session_vitals.session_id
+        and s.user_id = auth.uid()
     )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1
-      FROM updated_all.sessions s
-      WHERE s.id = session_vitals.session_id
-        AND s.user_id = auth.uid()
+  ) with check (
+    exists (
+      select 1
+      from public.sessions s
+      where s.id = session_vitals.session_id
+        and s.user_id = auth.uid()
     )
   );
 
-CREATE POLICY "session_vitals_delete" ON updated_all.session_vitals
-  FOR DELETE USING (
-    EXISTS (
-      SELECT 1
-      FROM updated_all.sessions s
-      WHERE s.id = session_vitals.session_id
-        AND s.user_id = auth.uid()
+create policy "session_vitals_delete" on public.session_vitals
+  for delete using (
+    exists (
+      select 1
+      from public.sessions s
+      where s.id = session_vitals.session_id
+        and s.user_id = auth.uid()
     )
   );

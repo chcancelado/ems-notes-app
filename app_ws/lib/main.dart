@@ -72,6 +72,7 @@ class EMSNotesApp extends StatelessWidget {
         '/chart': (context) => const ChartPage(),
         '/report': (context) => const ReportPage(),
         '/sessions': (context) => const SessionsPage(),
+        '/sessions/new': (context) => const SessionStartPage(),
       },
     );
   }

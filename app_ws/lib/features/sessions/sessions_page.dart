@@ -1,19 +1,106 @@
 import 'package:flutter/material.dart';
-import '../../services/session_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
 
-class SessionsPage extends StatelessWidget {
+import '../../services/session_service.dart';
+import '../../services/supabase_session_repository.dart';
+import '../../widgets/sidebar_layout.dart';
+
+class SessionsPage extends StatefulWidget {
   const SessionsPage({super.key});
 
   @override
+  State<SessionsPage> createState() => _SessionsPageState();
+}
+
+class _SessionsPageState extends State<SessionsPage> {
+  final _repository = SupabaseSessionRepository();
+  bool _isLoading = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSessions();
+  }
+
+  Future<void> _loadSessions() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final sessions = await _repository.fetchSessions();
+      sessionService.replaceSessions(sessions);
+    } catch (error) {
+      _error = error.toString();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _refresh() async {
+    await _loadSessions();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final sessions = sessionService.sessions;
-    
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Session History'),
-      ),
-      body: sessions.isEmpty
-          ? Center(
+    final navigator = Navigator.of(context);
+    return SidebarLayout(
+      title: 'Session History',
+      activeDestination: SidebarDestination.sessions,
+      actions: [
+        IconButton(
+          onPressed: _isLoading ? null : _refresh,
+          icon: const Icon(Icons.refresh),
+          tooltip: 'Refresh',
+        ),
+      ],
+      onLogout: () async {
+        await Supabase.instance.client.auth.signOut();
+        if (!mounted) return;
+        navigator.pushReplacementNamed('/login');
+      },
+      body: StreamBuilder<List<Session>>(
+        stream: sessionService.sessionsStream,
+        initialData: sessionService.sessions,
+        builder: (context, snapshot) {
+          final sessions = snapshot.data ?? const <Session>[];
+
+          if (_isLoading && sessions.isEmpty) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (_error != null && sessions.isEmpty) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Failed to load sessions:\n$_error',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: _refresh,
+                      child: const Text('Try Again'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          if (sessions.isEmpty) {
+            return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24.0),
                 child: Column(
@@ -27,7 +114,10 @@ class SessionsPage extends StatelessWidget {
                     const SizedBox(height: 16.0),
                     Text(
                       'No Sessions Yet',
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      style: Theme.of(context)
+                          .textTheme
+                          .headlineSmall
+                          ?.copyWith(
                             fontWeight: FontWeight.bold,
                             color: Colors.grey[700],
                           ),
@@ -36,14 +126,17 @@ class SessionsPage extends StatelessWidget {
                     Text(
                       'Start a new session to begin documenting patient encounters',
                       textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(
                             color: Colors.grey[600],
                           ),
                     ),
                     const SizedBox(height: 32.0),
                     ElevatedButton.icon(
                       onPressed: () {
-                        Navigator.of(context).pushNamed('/patient-info');
+                        Navigator.of(context).pushNamed('/sessions/new');
                       },
                       icon: const Icon(Icons.add),
                       label: const Text('Start New Session'),
@@ -57,16 +150,27 @@ class SessionsPage extends StatelessWidget {
                   ],
                 ),
               ),
-            )
-          : ListView.builder(
+            );
+          }
+
+          return RefreshIndicator(
+            onRefresh: _refresh,
+            child: ListView.builder(
               padding: const EdgeInsets.all(16.0),
               itemCount: sessions.length,
               itemBuilder: (context, index) {
                 final session = sessions[index];
-                final elapsed = session.elapsedTime;
-                final hours = elapsed.inHours;
-                final minutes = elapsed.inMinutes.remainder(60);
-                
+                final incident = session.incidentInfo;
+                final incidentDate = DateTime.tryParse(
+                  incident['incident_date'] as String? ?? '',
+                );
+                final incidentType = incident['type'] as String? ?? 'Incident';
+                final subtitleText = [
+                  if (incidentDate != null)
+                    'Date: ${_formatDate(incidentDate)}',
+                  'Type: $incidentType',
+                ].join('\n');
+
                 return Card(
                   margin: const EdgeInsets.only(bottom: 12.0),
                   child: ListTile(
@@ -88,42 +192,25 @@ class SessionsPage extends StatelessWidget {
                           : 'Unnamed Patient',
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    subtitle: Text(
-                      'Started: ${_formatDateTime(session.startedAt)}\n'
-                      'Duration: ${hours}h ${minutes}m',
-                    ),
+                    subtitle: Text(subtitleText),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () {
                       Navigator.of(context).pushNamed(
                         '/report',
-                        arguments: session.id,
+                        arguments: {'sessionId': session.id},
                       );
                     },
                   ),
                 );
               },
             ),
+          );
+        },
+      ),
     );
   }
 
-  String _formatDateTime(DateTime dateTime) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final sessionDate = DateTime(dateTime.year, dateTime.month, dateTime.day);
-    
-    if (sessionDate.isAtSameMomentAs(today)) {
-      return 'Today ${_formatTime(dateTime)}';
-    } else if (sessionDate.isAtSameMomentAs(today.subtract(const Duration(days: 1)))) {
-      return 'Yesterday ${_formatTime(dateTime)}';
-    } else {
-      return '${dateTime.month}/${dateTime.day}/${dateTime.year} ${_formatTime(dateTime)}';
-    }
-  }
-
-  String _formatTime(DateTime dateTime) {
-    final hour = dateTime.hour > 12 ? dateTime.hour - 12 : dateTime.hour;
-    final minute = dateTime.minute.toString().padLeft(2, '0');
-    final period = dateTime.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:$minute $period';
+  String _formatDate(DateTime date) {
+    return '${date.month}/${date.day}/${date.year}';
   }
 }

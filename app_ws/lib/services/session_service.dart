@@ -3,26 +3,51 @@ import 'dart:async';
 /// Represents a patient session with associated data
 class Session {
   final String id;
-  final String patientName;
+  String patientName;
   final DateTime startedAt;
   final Map<String, dynamic> data;
 
   Session({
     required this.id,
-    required this.patientName,
+    String? patientName,
     DateTime? startedAt,
     Map<String, dynamic>? data,
-  })  : startedAt = startedAt ?? DateTime.now(),
+  })  : patientName = patientName ?? '',
+        startedAt = startedAt ?? DateTime.now(),
         data = data ?? {};
+
+  /// Get incident info captured for this session
+  Map<String, dynamic> get incidentInfo {
+    return Map<String, dynamic>.from(data['incident'] ?? {});
+  }
+
+  /// Set the current incident information
+  void setIncidentInfo(Map<String, dynamic> info) {
+    data['incident'] = Map<String, dynamic>.from(info);
+  }
 
   /// Get patient info from session data
   Map<String, dynamic> get patientInfo {
-    return Map<String, dynamic>.from(data['patientInfo'] ?? {});
+    final info = Map<String, dynamic>.from(data['patientInfo'] ?? {});
+    final history = info['medical_history'];
+    if (history is List) {
+      info['medical_history'] = history.map((entry) => entry.toString()).join(', ');
+    }
+    return info;
   }
 
   /// Set patient info in session data
   void setPatientInfo(Map<String, dynamic> info) {
-    data['patientInfo'] = Map<String, dynamic>.from(info);
+    final copy = Map<String, dynamic>.from(info);
+    final history = copy['medical_history'];
+    if (history is List) {
+      copy['medical_history'] = history.map((entry) => entry.toString()).join(', ');
+    }
+    data['patientInfo'] = copy;
+    final name = copy['name'] as String?;
+    if (name != null && name.isNotEmpty) {
+      patientName = name;
+    }
   }
 
   /// Get vitals list from session data
@@ -36,9 +61,16 @@ class Session {
     return [];
   }
 
+  /// Replace vitals list with the provided records
+  void setVitals(List<Map<String, dynamic>> vitalsEntries) {
+    data['vitals'] = vitalsEntries
+        .map((entry) => Map<String, dynamic>.from(entry))
+        .toList();
+  }
+
   /// Add vitals record to session
   void addVitals(Map<String, dynamic> vitalsData) {
-    final vitalsList = data['vitals'] as List? ?? [];
+    final vitalsList = List<Map<String, dynamic>>.from(vitals);
     vitalsList.insert(0, Map<String, dynamic>.from(vitalsData));
     data['vitals'] = vitalsList;
   }
@@ -63,11 +95,6 @@ class Session {
     data['notes'] = notesText;
   }
 
-  /// Calculate elapsed time since session start
-  Duration get elapsedTime {
-    return DateTime.now().difference(startedAt);
-  }
-
   /// Convert session to JSON-serializable map
   Map<String, dynamic> toJson() {
     return {
@@ -82,7 +109,7 @@ class Session {
   factory Session.fromJson(Map<String, dynamic> json) {
     return Session(
       id: json['id'] as String,
-      patientName: json['patientName'] as String,
+      patientName: json['patientName'] as String?,
       startedAt: DateTime.parse(json['startedAt'] as String),
       data: Map<String, dynamic>.from(json['data'] ?? {}),
     );
@@ -101,16 +128,28 @@ class SessionService {
   /// Stream of session updates
   Stream<List<Session>> get sessionsStream => _sessionsController.stream;
 
-  /// Add a new session
+  /// Add or replace a session
   void addSession(Session session) {
-    // Remove any existing session with the same ID
-    _sessions.removeWhere((s) => s.id == session.id);
-    
-    // Add new session to the beginning of the list
-    _sessions.insert(0, session);
-    
-    // Notify listeners
+    upsertSession(session);
+  }
+
+  /// Upsert session preserving ordering (new sessions appear first)
+  void upsertSession(Session session) {
+    final index = _sessions.indexWhere((s) => s.id == session.id);
+    if (index >= 0) {
+      _sessions[index] = session;
+    } else {
+      _sessions.insert(0, session);
+    }
     _sessionsController.add(sessions);
+  }
+
+  /// Replace the entire session collection
+  void replaceSessions(List<Session> sessions) {
+    _sessions
+      ..clear()
+      ..addAll(sessions);
+    _sessionsController.add(this.sessions);
   }
 
   /// Find a session by ID
@@ -127,6 +166,42 @@ class SessionService {
     final session = findSessionById(id);
     if (session != null) {
       session.data.addAll(updates);
+      _sessionsController.add(sessions);
+    }
+  }
+
+  /// Update session incident details
+  void updateIncidentInfo(String id, Map<String, dynamic> info) {
+    final session = findSessionById(id);
+    if (session != null) {
+      session.setIncidentInfo(info);
+      _sessionsController.add(sessions);
+    }
+  }
+
+  /// Update patient details for a session
+  void updatePatientInfo(String id, Map<String, dynamic> info) {
+    final session = findSessionById(id);
+    if (session != null) {
+      session.setPatientInfo(info);
+      _sessionsController.add(sessions);
+    }
+  }
+
+  /// Replace all vitals for a session
+  void replaceVitals(String id, List<Map<String, dynamic>> vitals) {
+    final session = findSessionById(id);
+    if (session != null) {
+      session.setVitals(vitals);
+      _sessionsController.add(sessions);
+    }
+  }
+
+  /// Append a vitals entry for the provided session
+  void addVitalsEntry(String id, Map<String, dynamic> vitals) {
+    final session = findSessionById(id);
+    if (session != null) {
+      session.addVitals(vitals);
       _sessionsController.add(sessions);
     }
   }

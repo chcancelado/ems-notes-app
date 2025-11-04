@@ -1,9 +1,10 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
-import '../../config/app_config.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
+
 import '../../services/session_service.dart';
-import 'patient_info_controller.dart';
+import '../../services/supabase_session_repository.dart';
+import '../../widgets/sidebar_layout.dart';
+import '../../widgets/unsaved_changes_dialog.dart';
 
 class PatientInfoPage extends StatefulWidget {
   const PatientInfoPage({super.key});
@@ -14,186 +15,177 @@ class PatientInfoPage extends StatefulWidget {
 
 class _PatientInfoPageState extends State<PatientInfoPage> {
   final _formKey = GlobalKey<FormState>();
-  final _controller = PatientInfoController();
-  String _name = '';
-  String _age = '';
-  String _chiefComplaint = '';
-  bool _isSaving = false;
-  bool _isEnding = false;
-  
-  // Session and timer management
+
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _dobController = TextEditingController();
+  final TextEditingController _heightController = TextEditingController();
+  final TextEditingController _weightController = TextEditingController();
+  final TextEditingController _allergiesController = TextEditingController();
+  final TextEditingController _medicationsController = TextEditingController();
+  final TextEditingController _chiefComplaintController =
+      TextEditingController();
+  final TextEditingController _medicalHistoryController =
+      TextEditingController();
+
+  final _repository = SupabaseSessionRepository();
   String? _sessionId;
-  Timer? _reminderTimer;
-  Duration _timeRemaining = AppConfig.patientInfoTimerDuration;
-  bool _timerStarted = false;
-  bool _reminderShown = false;
+  DateTime? _dateOfBirth;
+  String _sex = 'U';
+  bool _isSaving = false;
+  bool _initialized = false;
+  bool _isLoading = false;
+  bool _hasUnsavedChanges = false;
+  bool _isHydrating = false;
 
   @override
   void dispose() {
-    _reminderTimer?.cancel();
+    _nameController.dispose();
+    _dobController.dispose();
+    _heightController.dispose();
+    _weightController.dispose();
+    _allergiesController.dispose();
+    _medicationsController.dispose();
+    _chiefComplaintController.dispose();
+    _medicalHistoryController.dispose();
     super.dispose();
   }
 
-  void _startTimer({bool deferForFocus = false}) {
-    if (_timerStarted) {
-      _ensureSessionCreated();
-      return;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialized) return;
+    _initialized = true;
+
+    final args =
+        ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    final sessionId = args?['sessionId'] as String?;
+
+    if (sessionId != null) {
+      _sessionId = sessionId;
+      _initializeFromSources(sessionId);
+    } else {
+      final latest = sessionService.latestSession;
+      if (latest != null) {
+        _sessionId = latest.id;
+        _initializeFromSources(latest.id);
+      }
+    }
+  }
+
+  Future<void> _initializeFromSources(String sessionId) async {
+    final session = sessionService.findSessionById(sessionId);
+    if (session != null && session.patientInfo.isNotEmpty) {
+      _applyPatientInfo(session.patientInfo);
     }
 
-    void initializeTimer() {
-      if (!mounted || _timerStarted) return;
+    setState(() {
+      _isLoading = true;
+    });
 
-      setState(() {
-        _timerStarted = true;
-        _timeRemaining = AppConfig.patientInfoTimerDuration;
-      });
-
-      _ensureSessionCreated();
-
-      // Start countdown timer
-      _reminderTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        if (!mounted) {
-          timer.cancel();
-          return;
-        }
-
+    try {
+      final remote = await _repository.fetchPatientInfo(sessionId);
+      if (remote != null && remote.isNotEmpty) {
+        _applyPatientInfo(remote);
+        sessionService.updatePatientInfo(sessionId, remote);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load patient info: $error')),
+        );
+      }
+    } finally {
+      if (mounted) {
         setState(() {
-          if (_timeRemaining.inSeconds <= 0) {
-            timer.cancel();
-            if (!_reminderShown) {
-              _showReminderDialog();
-              _reminderShown = true;
-            }
-          } else {
-            _timeRemaining = Duration(seconds: _timeRemaining.inSeconds - 1);
-          }
+          _isLoading = false;
         });
-      });
-    }
-
-    if (deferForFocus) {
-      SchedulerBinding.instance.addPostFrameCallback((_) {
-        initializeTimer();
-      });
-    } else {
-      initializeTimer();
+      }
     }
   }
 
-  void _ensureSessionCreated() {
-    _sessionId ??= DateTime.now().millisecondsSinceEpoch.toString();
-
-    final existingSession = sessionService.findSessionById(_sessionId!);
-    if (existingSession == null) {
-      final session = Session(
-        id: _sessionId!,
-        patientName: _name.isNotEmpty ? _name : 'Unnamed Patient',
-      );
-      sessionService.addSession(session);
-    }
+  void _applyPatientInfo(Map<String, dynamic> patientInfo) {
+    _isHydrating = true;
+    setState(() {
+      _nameController.text = (patientInfo['name'] as String?) ?? '';
+      final dobString = patientInfo['date_of_birth'] as String?;
+      if (dobString != null) {
+        final parsed = DateTime.tryParse(dobString);
+        if (parsed != null) {
+          _dateOfBirth = parsed;
+          _dobController.text =
+              '${parsed.month}/${parsed.day}/${parsed.year}';
+        }
+      }
+      _sex = (patientInfo['sex'] as String?) ?? 'U';
+      final height = patientInfo['height_in_inches'];
+      _heightController.text = height == null ? '' : '$height';
+      final weight = patientInfo['weight_in_pounds'];
+      _weightController.text = weight == null ? '' : '$weight';
+      _allergiesController.text = (patientInfo['allergies'] as String?) ?? '';
+      _medicationsController.text =
+          (patientInfo['medications'] as String?) ?? '';
+      _chiefComplaintController.text =
+          (patientInfo['chief_complaint'] as String?) ?? '';
+      _medicalHistoryController.text =
+          (patientInfo['medical_history'] as String?) ?? '';
+      _hasUnsavedChanges = false;
+    });
+    _isHydrating = false;
   }
 
-  void _persistCurrentPatientInfoToSession() {
-    if (_sessionId == null) return;
-
-    final session = sessionService.findSessionById(_sessionId!);
-    if (session == null) return;
-
-    final Map<String, dynamic> info = {
-      'name': _name,
-      'chiefComplaint': _chiefComplaint,
-    };
-
-    final parsedAge = int.tryParse(_age);
-    if (parsedAge != null) {
-      info['age'] = parsedAge;
-    }
-
-    session.setPatientInfo(info);
-  }
-
-  Future<void> _navigateToVitals() async {
-    FocusScope.of(context).unfocus();
-    if (!_timerStarted) {
-      _startTimer();
-    } else {
-      _ensureSessionCreated();
-    }
-
-    _persistCurrentPatientInfoToSession();
-
-    if (_sessionId == null) {
+  void _handleFieldChange() {
+    if (_isHydrating) {
       return;
     }
-
-    await Navigator.of(context).pushNamed(
-      '/vitals',
-      arguments: _sessionId,
-    );
+    if (!_hasUnsavedChanges) {
+      setState(() {
+        _hasUnsavedChanges = true;
+      });
+    }
   }
 
-  Future<void> _navigateToChart() async {
-    FocusScope.of(context).unfocus();
-    if (!_timerStarted) {
-      _startTimer();
-    } else {
-      _ensureSessionCreated();
+  Future<bool> _confirmLeave() async {
+    if (!_hasUnsavedChanges) {
+      return true;
     }
-
-    _persistCurrentPatientInfoToSession();
-
-    if (_sessionId == null) {
-      return;
-    }
-
-    await Navigator.of(context).pushNamed(
-      '/chart',
-      arguments: _sessionId,
-    );
+    return showUnsavedChangesDialog(context);
   }
 
-  void _showReminderDialog() {
-    if (!mounted) return;
-    
-    showDialog(
+  Future<void> _pickDateOfBirth() async {
+    final initialDate = _dateOfBirth ?? DateTime.now();
+    final picked = await showDatePicker(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Reminder'),
-        content: const Text(
-          'It\'s time to check patient vitals!\n\n'
-          '5 minutes have elapsed since session start.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
-          ),
-          FilledButton.icon(
-            onPressed: () {
-              Navigator.of(context).pop();
-              Navigator.of(context).pushNamed(
-                '/vitals',
-                arguments: _sessionId,
-              );
-            },
-            icon: const Icon(Icons.monitor_heart),
-            label: const Text('Go to Vitals'),
-          ),
-        ],
-      ),
+      initialDate: initialDate,
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now(),
     );
+    if (picked != null) {
+      setState(() {
+        _dateOfBirth = picked;
+        _dobController.text =
+            '${picked.month}/${picked.day}/${picked.year}';
+        _hasUnsavedChanges = true;
+      });
+    }
   }
 
-  Future<void> _savePatientInfo() async {
-    if (!_formKey.currentState!.validate()) {
+  Future<void> _saveAndContinue() async {
+    if (_sessionId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No active session. Start a session first.'),
+        ),
+      );
+      return;
+    }
+    if (_dateOfBirth == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a date of birth.')),
+      );
       return;
     }
 
-    final parsedAge = int.tryParse(_age);
-    if (parsedAge == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid numeric age.')),
-      );
+    if (!_formKey.currentState!.validate()) {
       return;
     }
 
@@ -201,40 +193,39 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
       _isSaving = true;
     });
 
+    final height = int.tryParse(_heightController.text.trim()) ?? 0;
+    final weight = int.tryParse(_weightController.text.trim()) ?? 0;
+
     try {
-      await _controller.savePatientInfo(
-        name: _name,
-        age: parsedAge,
-        chiefComplaint: _chiefComplaint,
+      final savedInfo = await _repository.upsertPatientInfo(
+        sessionId: _sessionId!,
+        name: _nameController.text.trim(),
+        dateOfBirth: _dateOfBirth!,
+        sex: _sex,
+        heightInInches: height,
+        weightInPounds: weight,
+        allergies: _allergiesController.text.trim(),
+        medications: _medicationsController.text.trim(),
+        medicalHistory: _medicalHistoryController.text.trim(),
+        chiefComplaint: _chiefComplaintController.text.trim(),
       );
 
-      // Update session with patient info
-      if (_sessionId != null) {
-        final session = sessionService.findSessionById(_sessionId!);
-        if (session != null) {
-          session.setPatientInfo({
-            'name': _name,
-            'age': parsedAge,
-            'chiefComplaint': _chiefComplaint,
-          });
-        }
-      }
+      sessionService.updatePatientInfo(_sessionId!, savedInfo);
+      setState(() {
+        _hasUnsavedChanges = false;
+      });
 
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Patient information saved.')),
+      if (!mounted) return;
+      Navigator.of(context).pushReplacementNamed(
+        '/vitals',
+        arguments: {'sessionId': _sessionId},
       );
     } catch (error) {
-      if (!mounted) {
-        return;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save patient info: $error')),
+        );
       }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to save patient info: $error')),
-      );
     } finally {
       if (mounted) {
         setState(() {
@@ -244,241 +235,206 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
     }
   }
 
-  Future<void> _endSession() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    final parsedAge = int.tryParse(_age);
-    if (parsedAge == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid numeric age.')),
-      );
-      return;
-    }
-
-    setState(() {
-      _isEnding = true;
-    });
-
-    try {
-      // Save patient info to database
-      await _controller.savePatientInfo(
-        name: _name,
-        age: parsedAge,
-        chiefComplaint: _chiefComplaint,
-      );
-
-      // Create or update session
-      _sessionId ??= DateTime.now().millisecondsSinceEpoch.toString();
-
-      final session = sessionService.findSessionById(_sessionId!);
-      if (session != null) {
-        session.setPatientInfo({
-          'name': _name,
-          'age': parsedAge,
-          'chiefComplaint': _chiefComplaint,
-        });
-      } else {
-        final newSession = Session(
-          id: _sessionId!,
-          patientName: _name,
-        );
-        newSession.setPatientInfo({
-          'name': _name,
-          'age': parsedAge,
-          'chiefComplaint': _chiefComplaint,
-        });
-        sessionService.addSession(newSession);
-      }
-
-      if (!mounted) return;
-
-      // Navigate to report with session ID
-      Navigator.of(context).pushReplacementNamed(
-        '/report',
-        arguments: _sessionId,
-      );
-    } catch (error) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to end session: $error')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isEnding = false;
-        });
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Patient Information')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: ListView(
-            children: [
-              // Timer display placeholder (remains in layout from the start)
-              Card(
-                color: Colors.blue.shade50,
-                margin: const EdgeInsets.only(bottom: 16.0),
-                child: Padding(
-                  padding: const EdgeInsets.all(12.0),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.timer,
-                        color: _timerStarted
-                            ? (_timeRemaining.inSeconds <= 60
-                                ? Colors.red
-                                : Colors.blue)
-                            : Colors.grey,
-                      ),
-                      const SizedBox(width: 8.0),
-                      Expanded(
-                        child: Text(
-                          _timerStarted
-                              ? 'Vitals reminder in: ${_formatDuration(_timeRemaining)}'
-                              : 'Timer will start as soon as you begin entering patient information.',
-                          style: TextStyle(
+    final theme = Theme.of(context);
+
+    return SidebarLayout(
+      title: 'Patient Information',
+      activeDestination: SidebarDestination.newSession,
+      onNavigateAway: _confirmLeave,
+      onLogout: () async {
+        await Supabase.instance.client.auth.signOut();
+        if (!mounted) return;
+        Navigator.of(context).pushReplacementNamed('/login');
+      },
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Align(
+              alignment: Alignment.topCenter,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'Patient Details',
+                          style: theme.textTheme.headlineSmall?.copyWith(
                             fontWeight: FontWeight.bold,
-                            color: _timerStarted
-                                ? (_timeRemaining.inSeconds <= 60
-                                    ? Colors.red
-                                    : Colors.blue.shade900)
-                                : Colors.grey.shade700,
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _navigateToVitals,
-                      icon: const Icon(Icons.monitor_heart),
-                      label: const Text('Go to Vitals'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _navigateToChart,
-                      icon: const Icon(Icons.folder_shared),
-                      label: const Text('Open Chart'),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                decoration: const InputDecoration(
-                  labelText: 'Patient Name',
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: (value) {
-                  _name = value;
-                  if (!_timerStarted) _startTimer(deferForFocus: true);
-                },
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter patient name';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                decoration: const InputDecoration(
-                  labelText: 'Age',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.number,
-                onChanged: (value) {
-                  _age = value;
-                  if (!_timerStarted) _startTimer(deferForFocus: true);
-                },
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter age';
-                  }
-                  if (int.tryParse(value) == null) {
-                    return 'Age must be a valid number';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                decoration: const InputDecoration(
-                  labelText: 'Chief Complaint',
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 3,
-                onChanged: (value) {
-                  _chiefComplaint = value;
-                  if (!_timerStarted) _startTimer(deferForFocus: true);
-                },
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter chief complaint';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: _isSaving ? null : _savePatientInfo,
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(50),
-                ),
-                child: _isSaving
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Save Patient Information'),
-              ),
-              const SizedBox(height: 12),
-              FilledButton.icon(
-                onPressed: (_isSaving || _isEnding) ? null : _endSession,
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(50),
-                  backgroundColor: Colors.green,
-                ),
-                icon: _isEnding
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _nameController,
+                          decoration: const InputDecoration(
+                            labelText: 'Name',
+                          ),
+                          onChanged: (_) => _handleFieldChange(),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Please enter the patient\'s name';
+                            }
+                            return null;
+                          },
                         ),
-                      )
-                    : const Icon(Icons.check_circle),
-                label: Text(_isEnding ? 'Ending Session...' : 'End Session & View Report'),
+                        const SizedBox(height: 16),
+                        GestureDetector(
+                          onTap: _pickDateOfBirth,
+                          child: AbsorbPointer(
+                            child: TextFormField(
+                              controller: _dobController,
+                              decoration: const InputDecoration(
+                                labelText: 'Date of Birth',
+                                suffixIcon: Icon(Icons.calendar_today),
+                              ),
+                              onChanged: (_) => _handleFieldChange(),
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Select the date of birth';
+                                }
+                                return null;
+                              },
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<String>(
+                          value: _sex,
+                          decoration: const InputDecoration(
+                            labelText: 'Sex',
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 'M', child: Text('Male')),
+                            DropdownMenuItem(value: 'F', child: Text('Female')),
+                            DropdownMenuItem(value: 'O', child: Text('Other')),
+                            DropdownMenuItem(value: 'U', child: Text('Unknown')),
+                          ],
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setState(() {
+                              _sex = value;
+                              if (!_isHydrating) {
+                                _hasUnsavedChanges = true;
+                              }
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                controller: _heightController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Height (inches)',
+                                ),
+                                keyboardType: TextInputType.number,
+                                onChanged: (_) => _handleFieldChange(),
+                                validator: (value) {
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'Enter height';
+                                  }
+                                  final parsed = int.tryParse(value);
+                                  if (parsed == null || parsed <= 0) {
+                                    return 'Enter a positive number';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: TextFormField(
+                                controller: _weightController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Weight (lbs)',
+                                ),
+                                keyboardType: TextInputType.number,
+                                onChanged: (_) => _handleFieldChange(),
+                                validator: (value) {
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'Enter weight';
+                                  }
+                                  final parsed = int.tryParse(value);
+                                  if (parsed == null || parsed <= 0) {
+                                    return 'Enter a positive number';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _allergiesController,
+                          decoration: const InputDecoration(
+                            labelText: 'Allergies',
+                            hintText: 'List known allergies',
+                          ),
+                          maxLines: 2,
+                          onChanged: (_) => _handleFieldChange(),
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _medicationsController,
+                          decoration: const InputDecoration(
+                            labelText: 'Medications',
+                            hintText: 'List current medications',
+                          ),
+                          maxLines: 2,
+                          onChanged: (_) => _handleFieldChange(),
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _medicalHistoryController,
+                          decoration: const InputDecoration(
+                            labelText: 'Medical History',
+                            hintText: 'Summarize relevant medical history',
+                          ),
+                          maxLines: 3,
+                          onChanged: (_) => _handleFieldChange(),
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _chiefComplaintController,
+                          decoration: const InputDecoration(
+                            labelText: 'Chief Complaint',
+                          ),
+                          maxLines: 3,
+                          onChanged: (_) => _handleFieldChange(),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Enter the chief complaint';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 24),
+                        ElevatedButton(
+                          onPressed: _isSaving ? null : _saveAndContinue,
+                          style: ElevatedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(48),
+                          ),
+                          child: _isSaving
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Text('Continue to Vitals'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
-            ],
-          ),
-        ),
-      ),
+            ),
     );
-  }
-
-  String _formatDuration(Duration duration) {
-    final minutes = duration.inMinutes.remainder(60);
-    final seconds = duration.inSeconds.remainder(60);
-    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 }

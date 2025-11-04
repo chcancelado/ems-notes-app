@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
+
 import '../../services/session_service.dart';
-import '../patient_info/patient_info_controller.dart';
-import '../vitals/vitals_controller.dart';
-import 'report_controller.dart';
+import '../../services/supabase_session_repository.dart';
 
 class ReportPage extends StatefulWidget {
   const ReportPage({super.key});
@@ -12,463 +11,332 @@ class ReportPage extends StatefulWidget {
 }
 
 class _ReportPageState extends State<ReportPage> {
-  final _controller = ReportController();
-  late Future<ReportData> _reportFuture;
-  final _notesController = TextEditingController();
-  final _observationsController = TextEditingController();
-  bool _isSaving = false;
-  String? _sessionId;
+  final TextEditingController _notesController = TextEditingController();
+  final _repository = SupabaseSessionRepository();
+
   Session? _session;
+  String? _sessionId;
+  bool _isLoading = false;
 
   @override
-  void initState() {
-    super.initState();
-    // Will load report after we get session ID from route args
+  void dispose() {
+    _notesController.dispose();
+    super.dispose();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Get session ID from route arguments
-    final args = ModalRoute.of(context)?.settings.arguments;
-    if (args is String && _sessionId != args) {
-      _sessionId = args;
-      _session = sessionService.findSessionById(_sessionId!);
-      _reportFuture = _loadReport();
-      
-      // Load notes from session if available
-      if (_session != null) {
-        _notesController.text = _session!.notes;
+    final args =
+        ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    final sessionId = args?['sessionId'] as String? ??
+        ModalRoute.of(context)?.settings.arguments as String?;
+
+    if (sessionId != null && sessionId != _sessionId) {
+      _sessionId = sessionId;
+      _loadSession(sessionId);
+    } else if (_sessionId == null) {
+      final latest = sessionService.latestSession;
+      if (latest != null) {
+        _sessionId = latest.id;
+        _loadSession(latest.id);
       }
     }
   }
 
-  @override
-  void dispose() {
-    _notesController.dispose();
-    _observationsController.dispose();
-    super.dispose();
-  }
-
-  Future<ReportData> _loadReport() async {
-    // If we have a session, use session data
-    if (_session != null) {
-      final patientInfo = _session!.patientInfo;
-      PatientInfo? info;
-      
-      if (patientInfo.isNotEmpty) {
-        info = PatientInfo(
-          name: patientInfo['name'] as String? ?? '',
-          age: patientInfo['age'] as int? ?? 0,
-          chiefComplaint: patientInfo['chiefComplaint'] as String? ?? '',
-          updatedAt: _session!.startedAt,
-        );
-      }
-
-      // Get vitals from session
-      final sessionVitals = _session!.vitals;
-      final vitalsList = sessionVitals.map((v) {
-        return Vitals(
-          heartRate: v['heart_rate'] as int? ?? 0,
-          bloodPressure: v['blood_pressure'] as String? ?? '',
-          respiratoryRate: v['respiratory_rate'] as int? ?? 0,
-          temperature: (v['temperature'] as num?)?.toDouble() ?? 0.0,
-          timestamp: v['recorded_at'] != null 
-              ? DateTime.tryParse(v['recorded_at'] as String) ?? DateTime.now()
-              : DateTime.now(),
-        );
-      }).toList();
-
-      // Load notes from session
-      _notesController.text = _session!.notes;
-
-      return ReportData(
-        patientInfo: info,
-        vitalsHistory: vitalsList,
-        notes: _session!.notes.isNotEmpty 
-            ? ReportNotes(
-                notes: _session!.notes,
-                observations: '',
-                updatedAt: DateTime.now(),
-              )
-            : null,
-      );
-    }
-
-    // Fall back to loading from database if no session
-    final data = await _controller.loadReport();
-    _notesController.text = data.notes?.notes ?? '';
-    _observationsController.text = data.notes?.observations ?? '';
-    return data;
-  }
-
-  Future<void> _refresh() async {
-    final data = await _controller.loadReport();
-    if (!mounted) {
-      return;
-    }
+  Future<void> _loadSession(String id) async {
     setState(() {
-      _reportFuture = Future.value(data);
-      _notesController.text = data.notes?.notes ?? '';
-      _observationsController.text = data.notes?.observations ?? '';
-    });
-  }
-
-  Future<void> _saveNotes() async {
-    setState(() {
-      _isSaving = true;
+      _isLoading = true;
     });
 
     try {
-      // Save to session if available
-      if (_session != null) {
-        _session!.setNotes(_notesController.text.trim());
+      final session = await _repository.fetchSessionDetail(id);
+      if (session != null) {
+        sessionService.upsertSession(session);
+        setState(() {
+          _session = session;
+          _notesController.text = session.notes;
+        });
+      } else {
+        setState(() {
+          _session = null;
+          _notesController.clear();
+        });
       }
-
-      // Also save to database
-      await _controller.saveNotes(
-        notes: _notesController.text.trim(),
-        observations: _observationsController.text.trim(),
-      );
-
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Report notes saved.')));
-
-      await _refresh();
     } catch (error) {
-      if (!mounted) {
-        return;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load session: $error')),
+        );
       }
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to save notes: $error')));
     } finally {
       if (mounted) {
         setState(() {
-          _isSaving = false;
+          _isLoading = false;
         });
       }
     }
   }
 
-  String _formatTimestamp(DateTime timestamp) {
-    final local = timestamp.toLocal();
-    final date = '${local.month}/${local.day}/${local.year}';
-    final time =
-        '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
-    return '$date $time';
+  void _saveNotes() {
+    final session = _session;
+    if (session == null) return;
+    session.setNotes(_notesController.text.trim());
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Notes updated for this session.')),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final session = _session;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('EMS Report'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.share),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Report sharing is coming soon.')),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              setState(() {
-                _reportFuture = _loadReport();
-              });
-            },
-          ),
-        ],
+        title: const Text('Session Summary'),
       ),
-      body: FutureBuilder<ReportData>(
-        future: _reportFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('Unable to load report data.'),
-                    const SizedBox(height: 12),
-                    Text(
-                      '${snapshot.error}',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.red),
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () {
-                        setState(() {
-                          _reportFuture = _loadReport();
-                        });
-                      },
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-
-          final data = snapshot.data;
-          if (data == null) {
-            return const Center(child: Text('No report data available yet.'));
-          }
-
-          return RefreshIndicator(
-            onRefresh: _refresh,
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Session info card
-                  if (_session != null) ...[
-                    Card(
-                      color: Colors.blue.shade50,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : session == null
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child:
+                        Text('Select a session from history to view its report.'),
+                  ),
+                )
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _Section(
+                        title: 'Incident Information',
+                        child: _buildIncidentSummary(session),
+                      ),
+                      const SizedBox(height: 16),
+                      _Section(
+                        title: 'Patient Information',
+                        child: _buildPatientSummary(session),
+                      ),
+                      const SizedBox(height: 16),
+                      _Section(
+                        title: 'Vitals',
+                        child: _buildVitalsSummary(session),
+                      ),
+                      const SizedBox(height: 16),
+                      _Section(
+                        title: 'Notes',
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Row(
-                              children: [
-                                Icon(Icons.medical_services, color: Colors.blue.shade700),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'Session Report',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.blue.shade900,
-                                  ),
-                                ),
-                              ],
+                            TextField(
+                              controller: _notesController,
+                              maxLines: 5,
+                              decoration: const InputDecoration(
+                                border: OutlineInputBorder(),
+                                hintText:
+                                    'Enter narrative notes for this session',
+                              ),
                             ),
-                            const SizedBox(height: 8),
-                            Text('Session ID: ${_session!.id}'),
-                            Text('Started: ${_formatTimestamp(_session!.startedAt)}'),
-                            Text('Duration: ${_formatDuration(_session!.elapsedTime)}'),
+                            const SizedBox(height: 12),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: ElevatedButton.icon(
+                                onPressed: _saveNotes,
+                                icon: const Icon(Icons.save),
+                                label: const Text('Save Notes'),
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  const Text(
-                    'Patient Information',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  _buildPatientInfoCard(data.patientInfo),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Vital Signs History',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  _buildVitalsHistory(data.vitalsHistory),
-                  const SizedBox(height: 16),
-                  if (_session != null && _session!.chart.isNotEmpty)
-                    ...[
-                      const Text(
-                        'Medical Chart',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 8),
-                      _buildChartData(_session!.chart),
-                      const SizedBox(height: 16),
                     ],
-                  const Text(
-                    'Notes & Observations',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
-                  const SizedBox(height: 8),
-                  _buildNotesSection(),
-                ],
-              ),
+                ),
+    );
+  }
+
+  Widget _buildIncidentSummary(Session session) {
+    final incident = session.incidentInfo;
+    if (incident.isEmpty) {
+      return const Text('No incident information recorded.');
+    }
+
+    final arrivalAt = incident['arrival_at'] as String?;
+    final arrival = arrivalAt == null
+        ? null
+        : DateTime.tryParse(arrivalAt)?.toLocal();
+    final incidentDate = DateTime.tryParse(
+      incident['incident_date'] as String? ?? '',
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _summaryRow('Date', _formatDate(incidentDate)),
+        _summaryRow('Arrival Time', _formatTime(arrival)),
+        _summaryRow('Address', incident['address'] as String? ?? ''),
+        _summaryRow('Type', incident['type'] as String? ?? ''),
+      ],
+    );
+  }
+
+  Widget _buildPatientSummary(Session session) {
+    final info = session.patientInfo;
+    if (info.isEmpty) {
+      return const Text('Patient information has not been entered yet.');
+    }
+
+    final dob = DateTime.tryParse(info['date_of_birth'] as String? ?? '');
+    final height = info['height_in_inches'];
+    final weight = info['weight_in_pounds'];
+    final history = (info['medical_history'] as String?) ?? '';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _summaryRow('Name', info['name'] as String? ?? ''),
+        _summaryRow('Date of Birth', _formatDate(dob)),
+        _summaryRow('Sex', _describeSex(info['sex'] as String?)),
+        _summaryRow('Height', height != null ? '$height in' : ''),
+        _summaryRow('Weight', weight != null ? '$weight lbs' : ''),
+        _summaryRow('Allergies', info['allergies'] as String? ?? ''),
+        _summaryRow('Medications', info['medications'] as String? ?? ''),
+        _summaryRow('Chief Complaint', info['chief_complaint'] as String? ?? ''),
+        if (history.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          const Text(
+            'Medical History',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 4),
+          Text(history),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildVitalsSummary(Session session) {
+    final vitals = session.vitals;
+    if (vitals.isEmpty) {
+      return const Text('No vitals recorded for this session.');
+    }
+
+    return Column(
+      children: vitals.map((entry) {
+        final recordedAt = entry['recorded_at'] as String?;
+        final recorded = recordedAt == null
+            ? null
+            : DateTime.tryParse(recordedAt)?.toLocal();
+        return Card(
+          margin: const EdgeInsets.only(bottom: 8),
+          child: ListTile(
+            title: Text(
+              'Pulse ${entry['pulse_rate']} | Resp ${entry['breathing_rate']} | '
+              'BP ${entry['blood_pressure_systolic']}/${entry['blood_pressure_diastolic']}',
             ),
-          );
-        },
+            subtitle: Text(
+              [
+                if (entry['spo2'] != null) 'SpO2 ${entry['spo2']}%',
+                if (entry['blood_glucose'] != null)
+                  'Glucose ${entry['blood_glucose']}',
+                if (entry['temperature'] != null)
+                  'Temp ${entry['temperature']} F',
+                if ((entry['notes'] as String?)?.isNotEmpty ?? false)
+                  'Notes: ${entry['notes']}',
+                _formatDateTime(recorded),
+              ].where((part) => part.isNotEmpty).join('\n'),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _summaryRow(String label, String value) {
+    if (value.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 140,
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          Expanded(child: Text(value)),
+        ],
       ),
     );
   }
 
-  Widget _buildPatientInfoCard(PatientInfo? patientInfo) {
-    if (patientInfo == null) {
-      return const Card(
-        child: Padding(
-          padding: EdgeInsets.all(16.0),
-          child: Text('No patient information has been saved yet.'),
-        ),
-      );
-    }
+  String _formatDate(DateTime? date) {
+    if (date == null) return '';
+    return '${date.month}/${date.day}/${date.year}';
+  }
 
+  String _formatTime(DateTime? dateTime) {
+    if (dateTime == null) return '';
+    final time = TimeOfDay.fromDateTime(dateTime);
+    return time.format(context);
+  }
+
+  String _formatDateTime(DateTime? dateTime) {
+    if (dateTime == null) return '';
+    final date = _formatDate(dateTime);
+    final time = _formatTime(dateTime);
+    return '$date at $time';
+  }
+
+  String _describeSex(String? code) {
+    switch (code) {
+      case 'M':
+        return 'Male';
+      case 'F':
+        return 'Female';
+      case 'O':
+        return 'Other';
+      case 'U':
+      default:
+        return 'Unknown';
+    }
+  }
+}
+
+class _Section extends StatelessWidget {
+  const _Section({
+    required this.title,
+    required this.child,
+  });
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Name: ${patientInfo.name}'),
-            const SizedBox(height: 8),
-            Text('Age: ${patientInfo.age}'),
-            const SizedBox(height: 8),
-            Text('Chief Complaint: ${patientInfo.chiefComplaint}'),
-            const SizedBox(height: 8),
-            Text('Last Updated: ${_formatTimestamp(patientInfo.updatedAt)}'),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildVitalsHistory(List<Vitals> vitalsHistory) {
-    if (vitalsHistory.isEmpty) {
-      return const Card(
-        child: Padding(
-          padding: EdgeInsets.all(16.0),
-          child: Text('No vitals have been recorded yet.'),
-        ),
-      );
-    }
-
-    return Card(
-      child: ListView.separated(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: vitalsHistory.length,
-        separatorBuilder: (_, __) => const Divider(height: 1),
-        itemBuilder: (context, index) {
-          final vitals = vitalsHistory[index];
-          return ListTile(
-            title: Text('HR: ${vitals.heartRate}, BP: ${vitals.bloodPressure}'),
-            subtitle: Text(
-              'RR: ${vitals.respiratoryRate}, Temp: ${vitals.temperature.toStringAsFixed(1)}°F',
-            ),
-            trailing: Text(_formatTimestamp(vitals.timestamp)),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildNotesSection() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            TextField(
-              controller: _notesController,
-              decoration: const InputDecoration(
-                labelText: 'Narrative / Notes',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 4,
+            Text(
+              title,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _observationsController,
-              decoration: const InputDecoration(
-                labelText: 'Observations',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 4,
-            ),
-            const SizedBox(height: 16),
-            Align(
-              alignment: Alignment.centerRight,
-              child: ElevatedButton.icon(
-                onPressed: _isSaving ? null : _saveNotes,
-                icon: _isSaving
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.save),
-                label: Text(_isSaving ? 'Saving…' : 'Save Notes'),
-              ),
-            ),
+            child,
           ],
         ),
       ),
     );
-  }
-
-  Widget _buildChartData(Map<String, dynamic> chartData) {
-    final allergies = chartData['allergies'] as String? ?? '';
-    final medications = chartData['medications'] as String? ?? '';
-    final familyHistory = chartData['familyHistory'] as String? ?? '';
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (allergies.isNotEmpty) ...[
-              const Text(
-                'Allergies',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 4),
-              Text(allergies),
-              const SizedBox(height: 12),
-            ],
-            if (medications.isNotEmpty) ...[
-              const Text(
-                'Current Medications',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 4),
-              Text(medications),
-              const SizedBox(height: 12),
-            ],
-            if (familyHistory.isNotEmpty) ...[
-              const Text(
-                'Family History',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 4),
-              Text(familyHistory),
-            ],
-            if (allergies.isEmpty && medications.isEmpty && familyHistory.isEmpty)
-              const Text(
-                'No chart data recorded',
-                style: TextStyle(fontStyle: FontStyle.italic),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _formatDuration(Duration duration) {
-    final hours = duration.inHours;
-    final minutes = duration.inMinutes.remainder(60);
-    
-    if (hours > 0) {
-      return '${hours}h ${minutes}m';
-    } else {
-      return '${minutes}m';
-    }
   }
 }
