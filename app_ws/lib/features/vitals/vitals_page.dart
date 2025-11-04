@@ -3,6 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
 
 import '../../services/session_service.dart';
 import '../../services/supabase_session_repository.dart';
+import '../../widgets/app_input_decorations.dart';
+import '../../widgets/first_aid_dialog.dart';
 import '../../widgets/sidebar_layout.dart';
 import '../../widgets/unsaved_changes_dialog.dart';
 
@@ -14,6 +16,11 @@ class VitalsPage extends StatefulWidget {
 }
 
 class _VitalsPageState extends State<VitalsPage> {
+  static const int _defaultPulseRate = 0;
+  static const int _defaultBreathingRate = 0;
+  static const int _defaultSystolic = 1;
+  static const int _defaultDiastolic = 1;
+
   final _formKey = GlobalKey<FormState>();
 
   final TextEditingController _pulseController = TextEditingController();
@@ -32,6 +39,8 @@ class _VitalsPageState extends State<VitalsPage> {
   bool _isLoading = false;
   bool _hasUnsavedChanges = false;
   bool _isHydrating = false;
+  DateTime? _recordingStartedAt;
+  DateTime? _recordingEndedAt;
 
   @override
   void dispose() {
@@ -110,16 +119,38 @@ class _VitalsPageState extends State<VitalsPage> {
     _isHydrating = false;
     setState(() {
       _hasUnsavedChanges = false;
+      _recordingStartedAt = null;
+      _recordingEndedAt = null;
     });
   }
 
   void _handleFieldChange() {
     if (_isHydrating) return;
+    final hasValue = _hasAnyInput();
+    if (hasValue && _recordingStartedAt == null) {
+      _recordingStartedAt = DateTime.now();
+    }
+    if (hasValue) {
+      _recordingEndedAt = DateTime.now();
+    }
     if (!_hasUnsavedChanges) {
       setState(() {
         _hasUnsavedChanges = true;
       });
     }
+  }
+
+  bool _hasAnyInput() {
+    return [
+      _pulseController,
+      _breathingController,
+      _systolicController,
+      _diastolicController,
+      _spo2Controller,
+      _glucoseController,
+      _temperatureController,
+      _notesController,
+    ].any((controller) => controller.text.trim().isNotEmpty);
   }
 
   Future<bool> _confirmLeave() async {
@@ -140,17 +171,56 @@ class _VitalsPageState extends State<VitalsPage> {
       return;
     }
 
+    final pulseText = _pulseController.text.trim();
+    final breathingText = _breathingController.text.trim();
+    final systolicText = _systolicController.text.trim();
+    final diastolicText = _diastolicController.text.trim();
+    final spo2Text = _spo2Controller.text.trim();
+    final glucoseText = _glucoseController.text.trim();
+    final tempText = _temperatureController.text.trim();
+    final notesText = _notesController.text.trim();
+
+    final hasAnyValue = [
+      pulseText,
+      breathingText,
+      systolicText,
+      diastolicText,
+      spo2Text,
+      glucoseText,
+      tempText,
+      notesText,
+    ].any((value) => value.isNotEmpty);
+
+    if (!hasAnyValue) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter at least one vital before saving.')),
+      );
+      return;
+    }
+
+    final pulse = int.tryParse(pulseText) ?? _defaultPulseRate;
+    final breathing = int.tryParse(breathingText) ?? _defaultBreathingRate;
+    final systolic = int.tryParse(systolicText) ?? _defaultSystolic;
+    final diastolic = int.tryParse(diastolicText) ?? _defaultDiastolic;
+    final spo2 = int.tryParse(spo2Text);
+    final glucose = int.tryParse(glucoseText);
+    final temp = int.tryParse(tempText);
+    final recordingStart = _recordingStartedAt ?? DateTime.now();
+    final recordingEnd = _recordingEndedAt ?? recordingStart;
+
     try {
       final entry = await _repository.addVitals(
         sessionId: _sessionId!,
-        pulseRate: int.parse(_pulseController.text.trim()),
-        breathingRate: int.parse(_breathingController.text.trim()),
-        systolic: int.parse(_systolicController.text.trim()),
-        diastolic: int.parse(_diastolicController.text.trim()),
-        spo2: int.tryParse(_spo2Controller.text.trim()),
-        bloodGlucose: int.tryParse(_glucoseController.text.trim()),
-        temperature: int.tryParse(_temperatureController.text.trim()),
-        notes: _notesController.text.trim(),
+        pulseRate: pulse,
+        breathingRate: breathing,
+        systolic: systolic,
+        diastolic: diastolic,
+        spo2: spo2,
+        bloodGlucose: glucose,
+        temperature: temp,
+        notes: notesText,
+        recordingStartedAt: recordingStart.toUtc(),
+        recordingEndedAt: recordingEnd.toUtc(),
       );
 
       sessionService.addVitalsEntry(_sessionId!, entry);
@@ -165,6 +235,42 @@ class _VitalsPageState extends State<VitalsPage> {
     }
   }
 
+  Future<void> _goBackToPatientInfo() async {
+    final canLeave = await _confirmLeave();
+    if (!canLeave || !mounted) return;
+    if (_sessionId == null) {
+      Navigator.of(context).pushReplacementNamed('/patient-info');
+      return;
+    }
+    Navigator.of(context).pushReplacementNamed(
+      '/patient-info',
+      arguments: {'sessionId': _sessionId},
+    );
+  }
+
+  Future<void> _finishSession() async {
+    final canLeave = await _confirmLeave();
+    if (!canLeave || !mounted) return;
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      '/home',
+      (route) => route.settings.name == '/home',
+    );
+  }
+
+  Future<void> _showFirstAid() async {
+    final type = _session?.incidentInfo['type'];
+    if (type is! String || type.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Incident type not available. Return to Incident Information to set it.'),
+        ),
+      );
+      return;
+    }
+    await showFirstAidDialog(context, type);
+  }
+
   String _formatTimestamp(String? value) {
     if (value == null || value.isEmpty) return '';
     final parsed = DateTime.tryParse(value);
@@ -174,9 +280,34 @@ class _VitalsPageState extends State<VitalsPage> {
     return '${parsed.month}/${parsed.day}/${parsed.year} at $time';
   }
 
+  String _formatTimeRange(String? startIso, String? endIso) {
+    DateTime? start;
+    DateTime? end;
+    if (startIso != null && startIso.isNotEmpty) {
+      start = DateTime.tryParse(startIso);
+    }
+    if (endIso != null && endIso.isNotEmpty) {
+      end = DateTime.tryParse(endIso);
+    }
+    if (start == null) {
+      return '--';
+    }
+    final startText =
+        TimeOfDay.fromDateTime(start.toLocal()).format(context);
+    final endText = end == null
+        ? '--'
+        : TimeOfDay.fromDateTime(end.toLocal()).format(context);
+    return '$startText - $endText';
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = _session;
+    final theme = Theme.of(context);
+    final slashStyle = theme.textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.w600,
+          color: Colors.grey.shade600,
+        );
     return SidebarLayout(
       title: 'Vitals',
       activeDestination: SidebarDestination.newSession,
@@ -220,12 +351,33 @@ class _VitalsPageState extends State<VitalsPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    onPressed: () => _showFirstAid(),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: firstAidAccentColor,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 12,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                    ),
+                                    icon: const Icon(Icons.health_and_safety),
+                                    label: const Text('Show First Aid'),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
                                 Row(
                                   children: [
                                     Expanded(
                                       child: _numberField(
                                         controller: _pulseController,
                                         label: 'Pulse Rate',
+                                        hint: '-',
                                       ),
                                     ),
                                     const SizedBox(width: 16),
@@ -233,6 +385,7 @@ class _VitalsPageState extends State<VitalsPage> {
                                       child: _numberField(
                                         controller: _breathingController,
                                         label: 'Breathing Rate',
+                                        hint: '-',
                                       ),
                                     ),
                                   ],
@@ -244,13 +397,25 @@ class _VitalsPageState extends State<VitalsPage> {
                                       child: _numberField(
                                         controller: _systolicController,
                                         label: 'BP Systolic',
+                                        hint: '-',
                                       ),
                                     ),
-                                    const SizedBox(width: 16),
+                                    Container(
+                                      margin: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                      ),
+                                      height: 56,
+                                      alignment: Alignment.center,
+                                      child: Text(
+                                        '/',
+                                        style: slashStyle,
+                                      ),
+                                    ),
                                     Expanded(
                                       child: _numberField(
                                         controller: _diastolicController,
                                         label: 'BP Diastolic',
+                                        hint: '-',
                                       ),
                                     ),
                                   ],
@@ -262,7 +427,7 @@ class _VitalsPageState extends State<VitalsPage> {
                                       child: _numberField(
                                         controller: _spo2Controller,
                                         label: 'SpO2',
-                                        required: false,
+                                        hint: '-',
                                       ),
                                     ),
                                     const SizedBox(width: 16),
@@ -270,7 +435,7 @@ class _VitalsPageState extends State<VitalsPage> {
                                       child: _numberField(
                                         controller: _glucoseController,
                                         label: 'Blood Glucose',
-                                        required: false,
+                                        hint: '-',
                                       ),
                                     ),
                                     const SizedBox(width: 16),
@@ -278,7 +443,7 @@ class _VitalsPageState extends State<VitalsPage> {
                                       child: _numberField(
                                         controller: _temperatureController,
                                         label: 'Temperature',
-                                        required: false,
+                                        hint: '-',
                                       ),
                                     ),
                                   ],
@@ -286,17 +451,34 @@ class _VitalsPageState extends State<VitalsPage> {
                                 const SizedBox(height: 16),
                                 TextFormField(
                                   controller: _notesController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Notes',
+                                  decoration: AppInputDecorations.filledField(
+                                    context,
+                                    label: 'Notes',
                                   ),
+                                  style: AppInputDecorations.fieldTextStyle,
                                   maxLines: 3,
                                   onChanged: (_) => _handleFieldChange(),
                                 ),
                                 const SizedBox(height: 16),
-                                ElevatedButton.icon(
-                                  onPressed: _addVitals,
-                                  icon: const Icon(Icons.add),
-                                  label: const Text('Add Vitals Entry'),
+                                Center(
+                                  child: ElevatedButton.icon(
+                                    onPressed: _addVitals,
+                                    style: ElevatedButton.styleFrom(
+                                      minimumSize: const Size(0, 44),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 20,
+                                        vertical: 12,
+                                      ),
+                                      backgroundColor:
+                                          Theme.of(context).colorScheme.primary,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    icon: const Icon(Icons.add),
+                                    label: const Text('Add Vitals Entry'),
+                                  ),
                                 ),
                               ],
                             ),
@@ -319,46 +501,172 @@ class _VitalsPageState extends State<VitalsPage> {
                               itemCount: _vitals.length,
                               itemBuilder: (context, index) {
                                 final entry = _vitals[index];
+                                final pulseRaw = entry['pulse_rate'] as int?;
+                                final breathingRaw =
+                                    entry['breathing_rate'] as int?;
+                                final systolicRaw =
+                                    entry['blood_pressure_systolic'] as int?;
+                                final diastolicRaw =
+                                    entry['blood_pressure_diastolic'] as int?;
+                                final pulse = (pulseRaw == null ||
+                                        pulseRaw == _defaultPulseRate)
+                                    ? null
+                                    : pulseRaw;
+                                final breathing = (breathingRaw == null ||
+                                        breathingRaw == _defaultBreathingRate)
+                                    ? null
+                                    : breathingRaw;
+                                final systolic = (systolicRaw == null ||
+                                        systolicRaw == _defaultSystolic)
+                                    ? null
+                                    : systolicRaw;
+                                final diastolic = (diastolicRaw == null ||
+                                        diastolicRaw == _defaultDiastolic)
+                                    ? null
+                                    : diastolicRaw;
+                                final titleParts = <String>[];
+                                if (pulse != null) {
+                                  titleParts.add('Pulse ${pulse} bpm');
+                                }
+                                if (breathing != null) {
+                                  titleParts.add('Resp ${breathing} bpm');
+                                }
+                                if (systolic != null || diastolic != null) {
+                                  final systolicText =
+                                      systolic?.toString() ?? '--';
+                                  final diastolicText =
+                                      diastolic?.toString() ?? '--';
+                                  titleParts
+                                      .add('BP $systolicText/$diastolicText');
+                                }
+                                final titleText = titleParts.isEmpty
+                                    ? 'Vitals Entry'
+                                    : titleParts.join(' | ');
+                                final rangeText = _formatTimeRange(
+                                  entry['recording_started_at'] as String?,
+                                  entry['recording_ended_at'] as String?,
+                                );
+                                final subtitleLines = [
+                                  if (entry['spo2'] != null)
+                                    'SpO2 ${entry['spo2']}%',
+                                  if (entry['blood_glucose'] != null)
+                                    'Glucose ${entry['blood_glucose']} mg/dL',
+                                  if (entry['temperature'] != null)
+                                    'Temp ${entry['temperature']} F',
+                                  if ((entry['notes'] as String?)?.isNotEmpty ??
+                                      false)
+                                    'Notes: ${entry['notes']}',
+                                  _formatTimestamp(
+                                    entry['recorded_at'] as String?,
+                                  ),
+                                ].where((text) => text.isNotEmpty).toList();
+
                                 return Card(
                                   margin: const EdgeInsets.only(bottom: 12),
-                                  child: ListTile(
-                                    title: Text(
-                                      'Pulse ${entry['pulse_rate']} | '
-                                      'Resp ${entry['breathing_rate']} | '
-                                      'BP ${entry['blood_pressure_systolic']}/${entry['blood_pressure_diastolic']}',
-                                    ),
-                                    subtitle: Text(
-                                      [
-                                        if (entry['spo2'] != null)
-                                          'SpO2 ${entry['spo2']}%',
-                                        if (entry['blood_glucose'] != null)
-                                          'Glucose ${entry['blood_glucose']}',
-                                        if (entry['temperature'] != null)
-                                          'Temp ${entry['temperature']} F',
-                                        if ((entry['notes'] as String?)
-                                                ?.isNotEmpty ??
-                                            false)
-                                          'Notes: ${entry['notes']}',
-                                        _formatTimestamp(
-                                            entry['recorded_at'] as String?),
-                                      ].where((text) => text.isNotEmpty).join('\n'),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        SizedBox(
+                                          width: 160,
+                                          child: Text(
+                                            rangeText,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyMedium
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                titleText,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .titleMedium
+                                                    ?.copyWith(
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                              ),
+                                              if (subtitleLines.isNotEmpty)
+                                                Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                          top: 8.0),
+                                                  child: Text(
+                                                    subtitleLines.join('\n'),
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .bodyMedium,
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 );
                               },
                             ),
                           const SizedBox(height: 24),
-                          OutlinedButton(
-                            onPressed: () async {
-                              final canLeave = await _confirmLeave();
-                              if (!canLeave) return;
-                              if (!mounted) return;
-                              Navigator.of(context).pushNamedAndRemoveUntil(
-                                '/home',
-                                (route) => route.settings.name == '/home',
-                              );
-                            },
-                            child: const Text('Finish Session'),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: _goBackToPatientInfo,
+                                  style: OutlinedButton.styleFrom(
+                                    minimumSize: const Size.fromHeight(48),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  icon: const Icon(Icons.arrow_back),
+                                  label: const Text(
+                                    'Back to Patient Information',
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: _finishSession,
+                                  style: ElevatedButton.styleFrom(
+                                    minimumSize: const Size.fromHeight(48),
+                                    backgroundColor:
+                                        Theme.of(context).colorScheme.primary,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: const [
+                                      Text(
+                                        'Finish Session',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      SizedBox(width: 8),
+                                      Icon(Icons.arrow_forward),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -372,19 +680,23 @@ class _VitalsPageState extends State<VitalsPage> {
   Widget _numberField({
     required TextEditingController controller,
     required String label,
-    bool required = true,
+    bool showLabel = true,
+    String? hint,
   }) {
     return TextFormField(
       controller: controller,
-      decoration: InputDecoration(labelText: label),
+      decoration: AppInputDecorations.filledField(
+        context,
+        label: label,
+        hintText: hint,
+        showLabel: showLabel,
+      ),
+      style: AppInputDecorations.fieldTextStyle,
       keyboardType: TextInputType.number,
       onChanged: (_) => _handleFieldChange(),
       validator: (value) {
-        if (!required && (value == null || value.trim().isEmpty)) {
-          return null;
-        }
         if (value == null || value.trim().isEmpty) {
-          return 'Enter $label';
+          return null;
         }
         final parsed = int.tryParse(value.trim());
         if (parsed == null) {

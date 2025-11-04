@@ -3,6 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
 
 import '../../services/session_service.dart';
 import '../../services/supabase_session_repository.dart';
+import '../../widgets/app_input_decorations.dart';
+import '../../widgets/first_aid_dialog.dart';
 import '../../widgets/sidebar_layout.dart';
 import '../../widgets/unsaved_changes_dialog.dart';
 
@@ -18,7 +20,8 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _dobController = TextEditingController();
-  final TextEditingController _heightController = TextEditingController();
+  final TextEditingController _heightFeetController = TextEditingController();
+  final TextEditingController _heightInchesController = TextEditingController();
   final TextEditingController _weightController = TextEditingController();
   final TextEditingController _allergiesController = TextEditingController();
   final TextEditingController _medicationsController = TextEditingController();
@@ -37,11 +40,22 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
   bool _hasUnsavedChanges = false;
   bool _isHydrating = false;
 
+  String? get _incidentType {
+    if (_sessionId == null) return null;
+    final session = sessionService.findSessionById(_sessionId!);
+    final type = session?.incidentInfo['type'];
+    if (type is String && type.isNotEmpty) {
+      return type;
+    }
+    return null;
+  }
+
   @override
   void dispose() {
     _nameController.dispose();
     _dobController.dispose();
-    _heightController.dispose();
+    _heightFeetController.dispose();
+    _heightInchesController.dispose();
     _weightController.dispose();
     _allergiesController.dispose();
     _medicationsController.dispose();
@@ -117,8 +131,24 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
         }
       }
       _sex = (patientInfo['sex'] as String?) ?? 'U';
-      final height = patientInfo['height_in_inches'];
-      _heightController.text = height == null ? '' : '$height';
+      final dynamic heightValue = patientInfo['height_in_inches'];
+      int? heightInches;
+      if (heightValue is int) {
+        heightInches = heightValue;
+      } else if (heightValue is double) {
+        heightInches = heightValue.round();
+      } else if (heightValue is String) {
+        heightInches = int.tryParse(heightValue);
+      }
+      if (heightInches != null && heightInches > 0) {
+        final feet = heightInches ~/ 12;
+        final inches = heightInches % 12;
+        _heightFeetController.text = feet.toString();
+        _heightInchesController.text = inches.toString();
+      } else {
+        _heightFeetController.clear();
+        _heightInchesController.clear();
+      }
       final weight = patientInfo['weight_in_pounds'];
       _weightController.text = weight == null ? '' : '$weight';
       _allergiesController.text = (patientInfo['allergies'] as String?) ?? '';
@@ -142,6 +172,51 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
         _hasUnsavedChanges = true;
       });
     }
+  }
+
+  String? _validateHeightFeet(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return null;
+    }
+    final parsed = int.tryParse(value.trim());
+    if (parsed == null) {
+      return 'Enter feet as a number';
+    }
+    if (parsed < 0) {
+      return 'Feet must be 0 or greater';
+    }
+    return null;
+  }
+
+  String? _validateHeightInches(String? value) {
+    final feetText = _heightFeetController.text.trim();
+    final feet = feetText.isEmpty ? 0 : int.tryParse(feetText);
+    if (feet == null) {
+      return 'Enter feet as a number';
+    }
+
+    final inchesText = value?.trim() ?? '';
+    if (inchesText.isEmpty) {
+      if (feet == 0) {
+        return 'Enter height';
+      }
+      return null;
+    }
+
+    final inches = int.tryParse(inchesText);
+    if (inches == null) {
+      return 'Enter inches as a number';
+    }
+    if (inches < 0) {
+      return 'Inches must be 0 or greater';
+    }
+    if (inches > 11) {
+      return 'Use a value between 0 and 11';
+    }
+    if (feet == 0 && inches == 0) {
+      return 'Enter height';
+    }
+    return null;
   }
 
   Future<bool> _confirmLeave() async {
@@ -189,11 +264,27 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
       return;
     }
 
+    final feetText = _heightFeetController.text.trim();
+    final inchesText = _heightInchesController.text.trim();
+    final int heightFeet =
+        feetText.isEmpty ? 0 : int.parse(feetText); // validated already
+    final int heightInches =
+        inchesText.isEmpty ? 0 : int.parse(inchesText); // validated already
+    final totalHeight = (heightFeet * 12) + heightInches;
+
+    if (totalHeight <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter the patient\'s height.'),
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _isSaving = true;
     });
 
-    final height = int.tryParse(_heightController.text.trim()) ?? 0;
     final weight = int.tryParse(_weightController.text.trim()) ?? 0;
 
     try {
@@ -202,7 +293,7 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
         name: _nameController.text.trim(),
         dateOfBirth: _dateOfBirth!,
         sex: _sex,
-        heightInInches: height,
+        heightInInches: totalHeight,
         weightInPounds: weight,
         allergies: _allergiesController.text.trim(),
         medications: _medicationsController.text.trim(),
@@ -235,6 +326,33 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
     }
   }
 
+  Future<void> _goBackToIncident() async {
+    final canLeave = await _confirmLeave();
+    if (!canLeave || !mounted) return;
+    if (_sessionId == null) {
+      Navigator.of(context).pushReplacementNamed('/sessions/new');
+      return;
+    }
+    Navigator.of(context).pushReplacementNamed(
+      '/sessions/new',
+      arguments: {'sessionId': _sessionId},
+    );
+  }
+
+  Future<void> _showFirstAid() async {
+    final type = _incidentType;
+    if (type == null || type.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Select an incident type before viewing first aid.'),
+        ),
+      );
+      return;
+    }
+    await showFirstAidDialog(context, type);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -261,6 +379,26 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () => _showFirstAid(),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: firstAidAccentColor,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                            ),
+                            icon: const Icon(Icons.health_and_safety),
+                            label: const Text('Show First Aid'),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
                         Text(
                           'Patient Details',
                           style: theme.textTheme.headlineSmall?.copyWith(
@@ -270,9 +408,11 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                         const SizedBox(height: 16),
                         TextFormField(
                           controller: _nameController,
-                          decoration: const InputDecoration(
-                            labelText: 'Name',
+                          decoration: AppInputDecorations.filledField(
+                            context,
+                            label: 'Name',
                           ),
+                          style: AppInputDecorations.fieldTextStyle,
                           onChanged: (_) => _handleFieldChange(),
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
@@ -287,10 +427,12 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                           child: AbsorbPointer(
                             child: TextFormField(
                               controller: _dobController,
-                              decoration: const InputDecoration(
-                                labelText: 'Date of Birth',
-                                suffixIcon: Icon(Icons.calendar_today),
+                              decoration: AppInputDecorations.filledField(
+                                context,
+                                label: 'Date of Birth',
+                                suffixIcon: const Icon(Icons.calendar_today),
                               ),
+                              style: AppInputDecorations.fieldTextStyle,
                               onChanged: (_) => _handleFieldChange(),
                               validator: (value) {
                                 if (value == null || value.isEmpty) {
@@ -304,14 +446,40 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                         const SizedBox(height: 16),
                         DropdownButtonFormField<String>(
                           value: _sex,
-                          decoration: const InputDecoration(
-                            labelText: 'Sex',
+                          decoration: AppInputDecorations.filledField(
+                            context,
+                            label: 'Sex',
                           ),
+                          style: AppInputDecorations.fieldTextStyle,
                           items: const [
-                            DropdownMenuItem(value: 'M', child: Text('Male')),
-                            DropdownMenuItem(value: 'F', child: Text('Female')),
-                            DropdownMenuItem(value: 'O', child: Text('Other')),
-                            DropdownMenuItem(value: 'U', child: Text('Unknown')),
+                            DropdownMenuItem(
+                              value: 'M',
+                              child: Text(
+                                'Male',
+                                style: AppInputDecorations.fieldTextStyle,
+                              ),
+                            ),
+                            DropdownMenuItem(
+                              value: 'F',
+                              child: Text(
+                                'Female',
+                                style: AppInputDecorations.fieldTextStyle,
+                              ),
+                            ),
+                            DropdownMenuItem(
+                              value: 'O',
+                              child: Text(
+                                'Other',
+                                style: AppInputDecorations.fieldTextStyle,
+                              ),
+                            ),
+                            DropdownMenuItem(
+                              value: 'U',
+                              child: Text(
+                                'Unknown',
+                                style: AppInputDecorations.fieldTextStyle,
+                              ),
+                            ),
                           ],
                           onChanged: (value) {
                             if (value == null) return;
@@ -327,32 +495,51 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                         Row(
                           children: [
                             Expanded(
-                              child: TextFormField(
-                                controller: _heightController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Height (inches)',
-                                ),
-                                keyboardType: TextInputType.number,
-                                onChanged: (_) => _handleFieldChange(),
-                                validator: (value) {
-                                  if (value == null || value.trim().isEmpty) {
-                                    return 'Enter height';
-                                  }
-                                  final parsed = int.tryParse(value);
-                                  if (parsed == null || parsed <= 0) {
-                                    return 'Enter a positive number';
-                                  }
-                                  return null;
-                                },
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller: _heightFeetController,
+                                      decoration: AppInputDecorations
+                                          .filledField(
+                                        context,
+                                        label: 'Height (ft)',
+                                      ),
+                                      style:
+                                          AppInputDecorations.fieldTextStyle,
+                                      keyboardType: TextInputType.number,
+                                      onChanged: (_) => _handleFieldChange(),
+                                      validator: _validateHeightFeet,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller: _heightInchesController,
+                                      decoration: AppInputDecorations
+                                          .filledField(
+                                        context,
+                                        label: 'Height (in)',
+                                      ),
+                                      style:
+                                          AppInputDecorations.fieldTextStyle,
+                                      keyboardType: TextInputType.number,
+                                      onChanged: (_) => _handleFieldChange(),
+                                      validator: _validateHeightInches,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                             const SizedBox(width: 16),
                             Expanded(
                               child: TextFormField(
                                 controller: _weightController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Weight (lbs)',
+                                decoration: AppInputDecorations.filledField(
+                                  context,
+                                  label: 'Weight (lbs)',
                                 ),
+                                style: AppInputDecorations.fieldTextStyle,
                                 keyboardType: TextInputType.number,
                                 onChanged: (_) => _handleFieldChange(),
                                 validator: (value) {
@@ -372,39 +559,47 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                         const SizedBox(height: 16),
                         TextFormField(
                           controller: _allergiesController,
-                          decoration: const InputDecoration(
-                            labelText: 'Allergies',
+                          decoration: AppInputDecorations.filledField(
+                            context,
+                            label: 'Allergies',
                             hintText: 'List known allergies',
                           ),
+                          style: AppInputDecorations.fieldTextStyle,
                           maxLines: 2,
                           onChanged: (_) => _handleFieldChange(),
                         ),
                         const SizedBox(height: 16),
                         TextFormField(
                           controller: _medicationsController,
-                          decoration: const InputDecoration(
-                            labelText: 'Medications',
+                          decoration: AppInputDecorations.filledField(
+                            context,
+                            label: 'Medications',
                             hintText: 'List current medications',
                           ),
+                          style: AppInputDecorations.fieldTextStyle,
                           maxLines: 2,
                           onChanged: (_) => _handleFieldChange(),
                         ),
                         const SizedBox(height: 16),
                         TextFormField(
                           controller: _medicalHistoryController,
-                          decoration: const InputDecoration(
-                            labelText: 'Medical History',
+                          decoration: AppInputDecorations.filledField(
+                            context,
+                            label: 'Medical History',
                             hintText: 'Summarize relevant medical history',
                           ),
+                          style: AppInputDecorations.fieldTextStyle,
                           maxLines: 3,
                           onChanged: (_) => _handleFieldChange(),
                         ),
                         const SizedBox(height: 16),
                         TextFormField(
                           controller: _chiefComplaintController,
-                          decoration: const InputDecoration(
-                            labelText: 'Chief Complaint',
+                          decoration: AppInputDecorations.filledField(
+                            context,
+                            label: 'Chief Complaint',
                           ),
+                          style: AppInputDecorations.fieldTextStyle,
                           maxLines: 3,
                           onChanged: (_) => _handleFieldChange(),
                           validator: (value) {
@@ -415,19 +610,61 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                           },
                         ),
                         const SizedBox(height: 24),
-                        ElevatedButton(
-                          onPressed: _isSaving ? null : _saveAndContinue,
-                          style: ElevatedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(48),
-                          ),
-                          child: _isSaving
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Text('Continue to Vitals'),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: _isSaving ? null : _goBackToIncident,
+                                style: OutlinedButton.styleFrom(
+                                  minimumSize: const Size.fromHeight(48),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.arrow_back),
+                                label:
+                                    const Text('Back to Incident Information'),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: _isSaving ? null : _saveAndContinue,
+                                style: ElevatedButton.styleFrom(
+                                  minimumSize: const Size.fromHeight(48),
+                                  backgroundColor:
+                                      Theme.of(context).colorScheme.primary,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: _isSaving
+                                    ? const SizedBox(
+                                        height: 20,
+                                        width: 20,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2),
+                                      )
+                                    : Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Text(
+                                            'Continue to Vitals',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          const Icon(Icons.arrow_forward),
+                                        ],
+                                      ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),

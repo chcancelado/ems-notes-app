@@ -112,6 +112,8 @@ create table if not exists public.session_vitals (
   blood_glucose smallint,
   temperature smallint,
   notes text,
+  recording_started_at timestamptz not null default timezone('utc', now()),
+  recording_ended_at timestamptz not null default timezone('utc', now()),
   recorded_at timestamptz not null default timezone('utc', now())
 );
 

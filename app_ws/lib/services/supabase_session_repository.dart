@@ -60,6 +60,8 @@ class SupabaseSessionRepository {
       'blood_glucose': row['blood_glucose'],
       'temperature': row['temperature'],
       'notes': row['notes'],
+      'recording_started_at': row['recording_started_at'],
+      'recording_ended_at': row['recording_ended_at'],
       'recorded_at': row['recorded_at'],
     };
   }
@@ -116,6 +118,37 @@ class SupabaseSessionRepository {
     );
     session.setIncidentInfo(_buildIncidentInfo(row));
     return session;
+  }
+
+  Future<Map<String, dynamic>> updateSession({
+    required String sessionId,
+    required DateTime incidentDate,
+    DateTime? arrivalAt,
+    required String address,
+    required String type,
+  }) async {
+    _requireUser();
+
+    final payload = {
+      'incident_date': _formatDate(incidentDate),
+      'incident_address': address,
+      'incident_type': type,
+      'arrival_at': arrivalAt?.toIso8601String(),
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    };
+
+    final row = await _client
+        .from('sessions')
+        .update(payload)
+        .eq('id', sessionId)
+        .select()
+        .maybeSingle();
+
+    if (row == null) {
+      throw StateError('Session not found for update.');
+    }
+
+    return _buildIncidentInfo(Map<String, dynamic>.from(row));
   }
 
   Future<Map<String, dynamic>?> fetchPatientInfo(String sessionId) async {
@@ -184,14 +217,16 @@ class SupabaseSessionRepository {
 
   Future<Map<String, dynamic>> addVitals({
     required String sessionId,
-    required int pulseRate,
-    required int breathingRate,
-    required int systolic,
-    required int diastolic,
+    int? pulseRate,
+    int? breathingRate,
+    int? systolic,
+    int? diastolic,
     int? spo2,
     int? bloodGlucose,
     int? temperature,
     String? notes,
+    DateTime? recordingStartedAt,
+    DateTime? recordingEndedAt,
   }) async {
     _requireUser();
 
@@ -205,6 +240,10 @@ class SupabaseSessionRepository {
       'blood_glucose': bloodGlucose,
       'temperature': temperature,
       'notes': notes?.isEmpty ?? true ? null : notes,
+      if (recordingStartedAt != null)
+        'recording_started_at': recordingStartedAt.toIso8601String(),
+      if (recordingEndedAt != null)
+        'recording_ended_at': recordingEndedAt.toIso8601String(),
     };
 
     final row = await _client
