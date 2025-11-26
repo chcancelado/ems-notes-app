@@ -17,7 +17,6 @@ class _LoginPageState extends State<LoginPage> {
   late final LoginController _controller;
   String _email = '';
   String _password = '';
-  String _confirmPassword = '';
   String _agencyCode = '';
   String _firstName = '';
   String _lastName = '';
@@ -213,7 +212,6 @@ class _LoginPageState extends State<LoginPage> {
                           obscureText: true,
                           textInputAction: TextInputAction.done,
                           onFieldSubmitted: (_) => _submit(),
-                          onChanged: (value) => _confirmPassword = value,
                           validator: (value) {
                             if (!_isSignUp) return null;
                             if (value == null || value.isEmpty) {

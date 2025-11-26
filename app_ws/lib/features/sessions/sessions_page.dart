@@ -154,6 +154,7 @@ class _SessionsPageState extends State<SessionsPage> {
       return;
     }
     final alreadyShared = await _repository.fetchSharedWith(session.id);
+    if (!mounted) return;
     if (_agencyMembers.isEmpty) {
       await _loadAgencyMembers();
     }
@@ -161,6 +162,7 @@ class _SessionsPageState extends State<SessionsPage> {
         .where((m) => m.userId != _currentUserId)
         .toList();
     if (members.isEmpty) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No other agency members to share with.')),
       );
@@ -370,7 +372,7 @@ class _SessionsPageState extends State<SessionsPage> {
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.redAccent,
+                    backgroundColor: Theme.of(context).colorScheme.primary,
                     foregroundColor: Colors.white,
                   ),
                   onPressed: () => Navigator.of(dialogContext).pop(true),
@@ -632,10 +634,10 @@ class _SessionsPageState extends State<SessionsPage> {
                                 child: ElevatedButton.icon(
                                   style: FormStyles.firstAidElevatedButton()
                                       .copyWith(
-                                    minimumSize: const MaterialStatePropertyAll(
+                                    minimumSize: const WidgetStatePropertyAll(
                                       Size(0, 44),
                                     ),
-                                    padding: const MaterialStatePropertyAll(
+                                    padding: const WidgetStatePropertyAll(
                                       EdgeInsets.symmetric(
                                         horizontal: 12,
                                         vertical: 10,
@@ -663,10 +665,10 @@ class _SessionsPageState extends State<SessionsPage> {
                                 child: OutlinedButton.icon(
                                   style: FormStyles.firstAidOutlinedButton()
                                       .copyWith(
-                                    minimumSize: const MaterialStatePropertyAll(
+                                    minimumSize: const WidgetStatePropertyAll(
                                       Size(0, 44),
                                     ),
-                                    padding: const MaterialStatePropertyAll(
+                                    padding: const WidgetStatePropertyAll(
                                       EdgeInsets.symmetric(
                                         horizontal: 12,
                                         vertical: 10,
@@ -910,7 +912,7 @@ class _SessionsPageState extends State<SessionsPage> {
 
   String _formatDateTime(DateTime dateTime) {
     final local = dateTime.toLocal();
-    final two = (int v) => v.toString().padLeft(2, '0');
+    String two(int v) => v.toString().padLeft(2, '0');
     return '${local.month}/${local.day}/${local.year} ${two(local.hour)}:${two(local.minute)}';
   }
 }

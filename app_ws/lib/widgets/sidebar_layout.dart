@@ -107,7 +107,7 @@ class _SidebarLayoutState extends State<SidebarLayout> {
   }
 
   Widget _footerBar(BuildContext context) {
-    final color = Theme.of(context).colorScheme.surfaceVariant;
+    final color = Theme.of(context).colorScheme.surfaceContainerHighest;
     return Container(
       color: color,
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -140,10 +140,14 @@ class _SidebarLayoutState extends State<SidebarLayout> {
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
         final canLeave = await _canLeave();
-        return canLeave;
+        if (canLeave && mounted) {
+          Navigator.of(context).maybePop();
+        }
       },
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -222,7 +226,8 @@ class _SidebarLayoutState extends State<SidebarLayout> {
                     children: [
                       Container(
                         width: 260,
-                        color: Theme.of(context).colorScheme.surfaceVariant,
+                        color:
+                            Theme.of(context).colorScheme.surfaceContainerHighest,
                         child: SafeArea(child: sidebar),
                       ),
                       const VerticalDivider(width: 1),
@@ -345,8 +350,8 @@ class _SidebarNavigation extends StatelessWidget {
                     children: [
                       CircleAvatar(
                         radius: 18,
-                        backgroundColor:
-                            theme.colorScheme.primary.withOpacity(0.1),
+                        backgroundColor: theme.colorScheme.primary
+                            .withValues(alpha: 0.1),
                         child: Icon(
                           Icons.person_outline,
                           color: theme.colorScheme.primary,

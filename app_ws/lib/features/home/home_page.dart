@@ -128,13 +128,13 @@ class _HomePageState extends State<HomePage> {
   Future<void> _showSessionSavedDialog() async {
     bool isClosed = false;
     final navigator = Navigator.of(context, rootNavigator: true);
-    final dialogFuture = showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Session saved',
-      barrierColor: Colors.black.withOpacity(0.25),
-      transitionDuration: const Duration(milliseconds: 150),
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
+      final dialogFuture = showGeneralDialog(
+        context: context,
+        barrierDismissible: true,
+        barrierLabel: 'Session saved',
+        barrierColor: Colors.black.withValues(alpha: 0.25),
+        transitionDuration: const Duration(milliseconds: 150),
+        transitionBuilder: (context, animation, secondaryAnimation, child) {
         return FadeTransition(
           opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
           child: child,

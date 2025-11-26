@@ -464,7 +464,7 @@ String? _formatHeight(dynamic value) {
   }
   final feet = height ~/ 12;
   final inches = height % 12;
-  return '${feet}\' ${inches}" ($height in)';
+  return '$feet\' $inches" ($height in)';
 }
 
 String? _formatWeight(dynamic value) {

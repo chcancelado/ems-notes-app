@@ -49,35 +49,26 @@ class EMSNotesApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final baseScheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF0B3D91),
+      brightness: Brightness.light,
+    );
     return MaterialApp(
       title: 'EMS Notes',
       theme: ThemeData(
-        colorScheme: const ColorScheme(
-          brightness: Brightness.light,
-          primary: Color(0xFF0B3D91), // deep navy
+        colorScheme: baseScheme.copyWith(
+          primary: const Color(0xFF0B3D91),
           onPrimary: Colors.white,
-          primaryContainer: Color(0xFF123E73),
-          onPrimaryContainer: Colors.white,
-          secondary: Color(0xFFE53935), // bold red accent
+          primaryContainer: const Color(0xFF123E73),
+          secondary: const Color(0xFFE53935),
           onSecondary: Colors.white,
-          secondaryContainer: Color(0xFFFFE5E3),
-          onSecondaryContainer: Color(0xFF6E1110),
-          tertiary: Color(0xFF1B4965),
-          onTertiary: Colors.white,
-          error: Color(0xFFB00020),
-          onError: Colors.white,
-          background: Color(0xFFF5F7FB), // light cool backdrop
-          onBackground: Color(0xFF0F1C2E),
-          surface: Color(0xFFF8FAFD),
-          onSurface: Color(0xFF0F1C2E),
-          surfaceVariant: Color(0xFFE1E7F2),
-          onSurfaceVariant: Color(0xFF2D3A4F),
-          outline: Color(0xFFB5C0CF),
+          secondaryContainer: const Color(0xFFFFE5E3),
+          onSecondaryContainer: const Color(0xFF6E1110),
+          surface: const Color(0xFFF8FAFD),
+          onSurface: const Color(0xFF0F1C2E),
+          surfaceContainerHighest: const Color(0xFFE1E7F2),
+          outline: const Color(0xFFB5C0CF),
           shadow: Colors.black26,
-          inverseSurface: Color(0xFF1F2A3A),
-          onInverseSurface: Color(0xFFE6EBF5),
-          outlineVariant: Color(0xFFCED7E6),
-          scrim: Colors.black54,
         ),
         useMaterial3: true,
         scaffoldBackgroundColor: const Color(0xFFF5F7FB),

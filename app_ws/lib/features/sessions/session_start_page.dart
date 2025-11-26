@@ -539,7 +539,7 @@ class _SessionStartPageState extends State<SessionStartPage> {
                           ),
                           const SizedBox(height: 16),
                           DropdownButtonFormField<String>(
-                            value: _selectedIncidentType.isEmpty
+                            initialValue: _selectedIncidentType.isEmpty
                                 ? null
                                 : _selectedIncidentType,
                             decoration: AppInputDecorations.filledField(

@@ -109,6 +109,7 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
     try {
       final remote = await _repository.fetchPatientInfo(sessionId);
       if (remote != null) {
+        if (!mounted) return;
         _applyPatientInfo(remote);
         sessionService.updatePatientInfo(sessionId, remote);
       }
@@ -184,51 +185,6 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
     }
   }
 
-  String? _validateHeightFeet(String? value) {
-    if (value == null || value.trim().isEmpty) {
-      return null;
-    }
-    final parsed = int.tryParse(value.trim());
-    if (parsed == null) {
-      return 'Enter feet as a number';
-    }
-    if (parsed < 0) {
-      return 'Feet must be 0 or greater';
-    }
-    return null;
-  }
-
-  String? _validateHeightInches(String? value) {
-    final feetText = _heightFeetController.text.trim();
-    final feet = feetText.isEmpty ? 0 : int.tryParse(feetText);
-    if (feet == null) {
-      return 'Enter feet as a number';
-    }
-
-    final inchesText = value?.trim() ?? '';
-    if (inchesText.isEmpty) {
-      if (feet == 0) {
-        return 'Enter height';
-      }
-      return null;
-    }
-
-    final inches = int.tryParse(inchesText);
-    if (inches == null) {
-      return 'Enter inches as a number';
-    }
-    if (inches < 0) {
-      return 'Inches must be 0 or greater';
-    }
-    if (inches > 11) {
-      return 'Use a value between 0 and 11';
-    }
-    if (feet == 0 && inches == 0) {
-      return 'Enter height';
-    }
-    return null;
-  }
-
   Future<bool> _confirmLeave() async {
     if (!_hasUnsavedChanges) {
       return true;
@@ -295,6 +251,7 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
         chiefComplaint: _chiefComplaintController.text.trim(),
       );
 
+      if (!mounted) return;
       sessionService.updatePatientInfo(_sessionId!, savedInfo);
       setState(() {
         _hasUnsavedChanges = false;
@@ -619,7 +576,7 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                                 ),
                                 const SizedBox(height: 16),
                                 DropdownButtonFormField<String>(
-                                  value: _sex,
+                                  initialValue: _sex,
                                   decoration: AppInputDecorations.filledField(
                                     context,
                                     label: 'Sex',

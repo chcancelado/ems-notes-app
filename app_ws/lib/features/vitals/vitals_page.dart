@@ -542,10 +542,10 @@ class _VitalsPageState extends State<VitalsPage> {
                                 : diastolicRaw;
                             final titleParts = <String>[];
                             if (pulse != null) {
-                              titleParts.add('Pulse ${pulse} bpm');
+                              titleParts.add('Pulse $pulse bpm');
                             }
                             if (breathing != null) {
-                              titleParts.add('Resp ${breathing} bpm');
+                              titleParts.add('Resp $breathing bpm');
                             }
                             if (systolic != null || diastolic != null) {
                               final systolicText = systolic?.toString() ?? '--';

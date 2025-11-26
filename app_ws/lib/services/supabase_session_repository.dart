@@ -153,7 +153,6 @@ class SupabaseSessionRepository {
   }
 
   Future<PatientInfo?> fetchPatientInfo(String sessionId) async {
-    final user = _requireUser();
     final row = await _client
         .from('session_patient_info')
         .select()
