@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import '../models/session_models.dart';
+
 /// Represents a patient session with associated data
 class Session {
   final String id;
@@ -20,44 +22,48 @@ class Session {
     this.sharedWithMe = false,
     this.sharedByUserId,
     Map<String, dynamic>? data,
-  }) : patientName = patientName ?? '',
-       startedAt = startedAt ?? DateTime.now(),
-       data = data ?? {};
+  })  : patientName = patientName ?? '',
+        startedAt = startedAt ?? DateTime.now(),
+        data = data ?? {};
+
+  /// Incident information stored for this session.
+  IncidentInfo? get incidentInfoModel {
+    final value = data['incident'];
+    if (value is Map<String, dynamic>) {
+      return IncidentInfo.fromSupabaseRow(value);
+    }
+    return null;
+  }
 
   /// Get incident info captured for this session
   Map<String, dynamic> get incidentInfo {
-    return Map<String, dynamic>.from(data['incident'] ?? {});
+    return incidentInfoModel?.toMap() ?? {};
   }
 
   /// Set the current incident information
-  void setIncidentInfo(Map<String, dynamic> info) {
-    data['incident'] = Map<String, dynamic>.from(info);
+  void setIncidentInfo(IncidentInfo info) {
+    data['incident'] = info.toMap();
+  }
+
+  /// Patient info stored for this session.
+  PatientInfo? get patientInfoModel {
+    final value = data['patientInfo'];
+    if (value is Map<String, dynamic>) {
+      return PatientInfo.fromSupabaseRow(value);
+    }
+    return null;
   }
 
   /// Get patient info from session data
   Map<String, dynamic> get patientInfo {
-    final info = Map<String, dynamic>.from(data['patientInfo'] ?? {});
-    final history = info['medical_history'];
-    if (history is List) {
-      info['medical_history'] = history
-          .map((entry) => entry.toString())
-          .join(', ');
-    }
-    return info;
+    return patientInfoModel?.toMap() ?? {};
   }
 
   /// Set patient info in session data
-  void setPatientInfo(Map<String, dynamic> info) {
-    final copy = Map<String, dynamic>.from(info);
-    final history = copy['medical_history'];
-    if (history is List) {
-      copy['medical_history'] = history
-          .map((entry) => entry.toString())
-          .join(', ');
-    }
-    data['patientInfo'] = copy;
-    final name = copy['name'] as String?;
-    if (name != null && name.isNotEmpty) {
+  void setPatientInfo(PatientInfo info) {
+    data['patientInfo'] = info.toMap();
+    final name = info.name;
+    if (name.isNotEmpty) {
       patientName = name;
     }
   }
@@ -74,16 +80,14 @@ class Session {
   }
 
   /// Replace vitals list with the provided records
-  void setVitals(List<Map<String, dynamic>> vitalsEntries) {
-    data['vitals'] = vitalsEntries
-        .map((entry) => Map<String, dynamic>.from(entry))
-        .toList();
+  void setVitals(List<VitalsEntry> vitalsEntries) {
+    data['vitals'] = vitalsEntries.map((entry) => entry.toMap()).toList();
   }
 
   /// Add vitals record to session
-  void addVitals(Map<String, dynamic> vitalsData) {
+  void addVitals(VitalsEntry vitalsData) {
     final vitalsList = List<Map<String, dynamic>>.from(vitals);
-    vitalsList.insert(0, Map<String, dynamic>.from(vitalsData));
+    vitalsList.insert(0, vitalsData.toMap());
     data['vitals'] = vitalsList;
   }
 
@@ -193,7 +197,7 @@ class SessionService {
   }
 
   /// Update session incident details
-  void updateIncidentInfo(String id, Map<String, dynamic> info) {
+  void updateIncidentInfo(String id, IncidentInfo info) {
     final session = findSessionById(id);
     if (session != null) {
       session.setIncidentInfo(info);
@@ -202,7 +206,7 @@ class SessionService {
   }
 
   /// Update patient details for a session
-  void updatePatientInfo(String id, Map<String, dynamic> info) {
+  void updatePatientInfo(String id, PatientInfo info) {
     final session = findSessionById(id);
     if (session != null) {
       session.setPatientInfo(info);
@@ -211,7 +215,7 @@ class SessionService {
   }
 
   /// Replace all vitals for a session
-  void replaceVitals(String id, List<Map<String, dynamic>> vitals) {
+  void replaceVitals(String id, List<VitalsEntry> vitals) {
     final session = findSessionById(id);
     if (session != null) {
       session.setVitals(vitals);
@@ -220,7 +224,7 @@ class SessionService {
   }
 
   /// Append a vitals entry for the provided session
-  void addVitalsEntry(String id, Map<String, dynamic> vitals) {
+  void addVitalsEntry(String id, VitalsEntry vitals) {
     final session = findSessionById(id);
     if (session != null) {
       session.addVitals(vitals);

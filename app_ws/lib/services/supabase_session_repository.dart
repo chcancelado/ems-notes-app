@@ -1,7 +1,16 @@
 import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
 
+import '../models/session_models.dart';
 import 'agency_service.dart';
 import 'session_service.dart';
+
+class AuthRequiredException implements Exception {
+  AuthRequiredException([this.message = 'No authenticated user.']);
+  final String message;
+
+  @override
+  String toString() => 'AuthRequiredException: $message';
+}
 
 class SupabaseSessionRepository {
   SupabaseSessionRepository({SupabaseClient? client})
@@ -14,7 +23,7 @@ class SupabaseSessionRepository {
   User _requireUser() {
     final user = _client.auth.currentUser;
     if (user == null) {
-      throw StateError('No authenticated user.');
+      throw AuthRequiredException();
     }
     _currentUserId = user.id;
     return user;
@@ -27,47 +36,19 @@ class SupabaseSessionRepository {
     return '$year-$month-$day';
   }
 
-  Map<String, dynamic> _buildIncidentInfo(Map<String, dynamic> row) {
-    return {
-      'incident_date': row['incident_date'],
-      'arrival_at': row['arrival_at'],
-      'address': row['incident_address'],
-      'type': row['incident_type'],
-    };
+  IncidentInfo _mapIncidentInfo(Map<String, dynamic> row) {
+    return IncidentInfo.fromSupabaseRow(row);
   }
 
-  Map<String, dynamic> _buildPatientInfo(Map<String, dynamic>? row) {
+  PatientInfo _mapPatientInfo(Map<String, dynamic>? row) {
     if (row == null) {
-      return {};
+      return const PatientInfo();
     }
-    return {
-      'name': row['patient_name'] ?? '',
-      'date_of_birth': row['date_of_birth'],
-      'sex': row['sex'],
-      'height_in_inches': row['height_in_inches'],
-      'weight_in_pounds': row['weight_in_pounds'],
-      'allergies': row['allergies'],
-      'medications': row['medications'],
-      'medical_history': row['medical_history'] as String? ?? '',
-      'chief_complaint': row['chief_complaint'],
-    };
+    return PatientInfo.fromSupabaseRow(row);
   }
 
-  Map<String, dynamic> _buildVitals(Map<String, dynamic> row) {
-    return {
-      'id': row['id'],
-      'pulse_rate': row['pulse_rate'],
-      'breathing_rate': row['breathing_rate'],
-      'blood_pressure_systolic': row['blood_pressure_systolic'],
-      'blood_pressure_diastolic': row['blood_pressure_diastolic'],
-      'spo2': row['spo2'],
-      'blood_glucose': row['blood_glucose'],
-      'temperature': row['temperature'],
-      'notes': row['notes'],
-      'recording_started_at': row['recording_started_at'],
-      'recording_ended_at': row['recording_ended_at'],
-      'recorded_at': row['recorded_at'],
-    };
+  VitalsEntry _mapVitals(Map<String, dynamic> row) {
+    return VitalsEntry.fromSupabaseRow(row);
   }
 
   Session _mapSessionRow(
@@ -90,16 +71,16 @@ class SupabaseSessionRepository {
       sharedWithMe: isShared,
       sharedByUserId: sharedByUserId,
     );
-    session.setIncidentInfo(_buildIncidentInfo(row));
+    session.setIncidentInfo(_mapIncidentInfo(row));
     final patientRow = row['session_patient_info'];
     if (patientRow is Map<String, dynamic>) {
-      session.setPatientInfo(_buildPatientInfo(patientRow));
+      session.setPatientInfo(_mapPatientInfo(patientRow));
     }
     final vitalsRows = row['session_vitals'];
     if (vitalsRows is List) {
       final vitals = vitalsRows
           .whereType<Map<String, dynamic>>()
-          .map(_buildVitals)
+          .map(_mapVitals)
           .toList();
       session.setVitals(vitals);
     }
@@ -136,11 +117,11 @@ class SupabaseSessionRepository {
       ownerId: user.id,
       agencyId: agencyId,
     );
-    session.setIncidentInfo(_buildIncidentInfo(row));
+    session.setIncidentInfo(_mapIncidentInfo(row));
     return session;
   }
 
-  Future<Map<String, dynamic>> updateSession({
+  Future<IncidentInfo> updateSession({
     required String sessionId,
     required DateTime incidentDate,
     DateTime? arrivalAt,
@@ -168,10 +149,10 @@ class SupabaseSessionRepository {
       throw StateError('Session not found for update.');
     }
 
-    return _buildIncidentInfo(Map<String, dynamic>.from(row));
+    return _mapIncidentInfo(Map<String, dynamic>.from(row));
   }
 
-  Future<Map<String, dynamic>?> fetchPatientInfo(String sessionId) async {
+  Future<PatientInfo?> fetchPatientInfo(String sessionId) async {
     final user = _requireUser();
     final row = await _client
         .from('session_patient_info')
@@ -183,10 +164,10 @@ class SupabaseSessionRepository {
       return null;
     }
 
-    return _buildPatientInfo(Map<String, dynamic>.from(row));
+    return _mapPatientInfo(Map<String, dynamic>.from(row));
   }
 
-  Future<Map<String, dynamic>> upsertPatientInfo({
+  Future<PatientInfo> upsertPatientInfo({
     required String sessionId,
     String? name,
     DateTime? dateOfBirth,
@@ -223,10 +204,10 @@ class SupabaseSessionRepository {
         .select()
         .single();
 
-    return _buildPatientInfo(Map<String, dynamic>.from(row));
+    return _mapPatientInfo(Map<String, dynamic>.from(row));
   }
 
-  Future<List<Map<String, dynamic>>> fetchVitals(String sessionId) async {
+  Future<List<VitalsEntry>> fetchVitals(String sessionId) async {
     _requireUser();
     final rows = await _client
         .from('session_vitals')
@@ -236,11 +217,11 @@ class SupabaseSessionRepository {
 
     return (rows as List<dynamic>)
         .whereType<Map<String, dynamic>>()
-        .map(_buildVitals)
+        .map(_mapVitals)
         .toList();
   }
 
-  Future<Map<String, dynamic>> addVitals({
+  Future<VitalsEntry> addVitals({
     required String sessionId,
     int? pulseRate,
     int? breathingRate,
@@ -277,7 +258,7 @@ class SupabaseSessionRepository {
         .select()
         .single();
 
-    return _buildVitals(Map<String, dynamic>.from(row));
+    return _mapVitals(Map<String, dynamic>.from(row));
   }
 
   Future<void> deleteSession(String sessionId) async {
