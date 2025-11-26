@@ -1,6 +1,15 @@
 import 'package:flutter/material.dart';
 
-enum SidebarDestination { home, newSession, sessions }
+import '../services/agency_service.dart';
+
+enum SidebarDestination {
+  home,
+  newSession,
+  sessions,
+  sharedSessions,
+  agency,
+  account,
+}
 
 class SidebarLayout extends StatefulWidget {
   const SidebarLayout({
@@ -34,6 +43,26 @@ class SidebarLayout extends StatefulWidget {
 
 class _SidebarLayoutState extends State<SidebarLayout> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  String? _greetingName;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGreeting();
+  }
+
+  Future<void> _loadGreeting() async {
+    try {
+      final member = await AgencyService().fetchCurrentMember();
+      if (mounted) {
+        setState(() {
+          _greetingName = member?.firstName;
+        });
+      }
+    } catch (_) {
+      // ignore greeting failures
+    }
+  }
 
   Future<bool> _canLeave() async {
     if (widget.onBackRequested != null) {
@@ -73,6 +102,12 @@ class _SidebarLayoutState extends State<SidebarLayout> {
         return '/sessions/new';
       case SidebarDestination.sessions:
         return '/sessions';
+      case SidebarDestination.sharedSessions:
+        return '/sessions/shared';
+      case SidebarDestination.agency:
+        return '/agency';
+      case SidebarDestination.account:
+        return '/account';
     }
   }
 
@@ -92,6 +127,7 @@ class _SidebarLayoutState extends State<SidebarLayout> {
             onSelected: _handleDestinationTap,
             onLogout: widget.onLogout != null ? _handleLogout : null,
             newSessionLabel: navLabel,
+            greeting: _greetingName,
           );
 
           final theme = Theme.of(context);
@@ -131,50 +167,35 @@ class _SidebarLayoutState extends State<SidebarLayout> {
                       if (Navigator.of(context).canPop()) {
                         Navigator.of(context).maybePop();
                       } else {
-                        Navigator.of(context)
-                            .pushReplacementNamed('/home');
+                        Navigator.of(context).pushReplacementNamed('/home');
                       }
                     },
                   )
                 : useDrawer
-                    ? IconButton(
-                        icon: const Icon(Icons.menu),
-                        onPressed: () =>
-                            _scaffoldKey.currentState?.openDrawer(),
-                      )
-                    : null,
+                ? IconButton(
+                    icon: const Icon(Icons.menu),
+                    onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                  )
+                : null,
           );
 
           return Scaffold(
             key: _scaffoldKey,
             appBar: appBar,
-            drawer: useDrawer
-                ? Drawer(
-                    child: SafeArea(
-                      child: sidebar,
-                    ),
-                  )
-                : null,
+            drawer: useDrawer ? Drawer(child: SafeArea(child: sidebar)) : null,
             body: useDrawer
                 ? SafeArea(child: widget.body)
                 : Row(
                     children: [
                       Container(
                         width: 260,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .surfaceVariant
-                            .withOpacity(0.3),
-                        child: SafeArea(
-                          child: sidebar,
-                        ),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceVariant.withOpacity(0.3),
+                        child: SafeArea(child: sidebar),
                       ),
                       const VerticalDivider(width: 1),
-                      Expanded(
-                        child: SafeArea(
-                          child: widget.body,
-                        ),
-                      ),
+                      Expanded(child: SafeArea(child: widget.body)),
                     ],
                   ),
             floatingActionButton: widget.floatingActionButton,
@@ -202,16 +223,28 @@ class _SidebarNavigation extends StatelessWidget {
     required this.onSelected,
     this.onLogout,
     required this.newSessionLabel,
+    this.greeting,
   });
 
   final SidebarDestination active;
   final ValueChanged<SidebarDestination> onSelected;
   final Future<void> Function()? onLogout;
   final String newSessionLabel;
+  final String? greeting;
 
   @override
   Widget build(BuildContext context) {
     final items = [
+      if (greeting != null && greeting!.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Text(
+            'Hello, $greeting',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+          ),
+        ),
       _NavTile(
         icon: Icons.home_outlined,
         label: 'Home',
@@ -226,9 +259,27 @@ class _SidebarNavigation extends StatelessWidget {
       ),
       _NavTile(
         icon: Icons.history,
-        label: 'Session History',
+        label: 'My Sessions',
         selected: active == SidebarDestination.sessions,
         onTap: () => onSelected(SidebarDestination.sessions),
+      ),
+      _NavTile(
+        icon: Icons.share,
+        label: 'Shared With Me',
+        selected: active == SidebarDestination.sharedSessions,
+        onTap: () => onSelected(SidebarDestination.sharedSessions),
+      ),
+      _NavTile(
+        icon: Icons.group,
+        label: 'My Agency',
+        selected: active == SidebarDestination.agency,
+        onTap: () => onSelected(SidebarDestination.agency),
+      ),
+      _NavTile(
+        icon: Icons.person,
+        label: 'My Account',
+        selected: active == SidebarDestination.account,
+        onTap: () => onSelected(SidebarDestination.account),
       ),
     ];
 
@@ -270,9 +321,7 @@ class _NavTile extends StatelessWidget {
       title: Text(label),
       selected: selected,
       onTap: onTap,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     );
   }
 }

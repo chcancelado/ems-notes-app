@@ -10,6 +10,8 @@ import 'features/patient_info/index.dart';
 import 'features/report/index.dart';
 import 'features/sessions/index.dart';
 import 'features/vitals/index.dart';
+import 'features/agency/index.dart';
+import 'features/account/index.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -72,7 +74,11 @@ class EMSNotesApp extends StatelessWidget {
         '/chart': (context) => const ChartPage(),
         '/report': (context) => const ReportPage(),
         '/sessions': (context) => const SessionsPage(),
+        '/sessions/shared': (context) =>
+            const SessionsPage(showSharedOnly: true),
         '/sessions/new': (context) => const SessionStartPage(),
+        '/agency': (context) => const AgencyPage(),
+        '/account': (context) => const AccountPage(),
       },
     );
   }

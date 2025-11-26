@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
 
+import 'agency_service.dart';
 import 'session_service.dart';
 
 class SupabaseSessionRepository {
@@ -7,12 +8,15 @@ class SupabaseSessionRepository {
     : _client = client ?? Supabase.instance.client;
 
   final SupabaseClient _client;
+  final AgencyService _agencyService = AgencyService();
+  String? _currentUserId;
 
   User _requireUser() {
     final user = _client.auth.currentUser;
     if (user == null) {
       throw StateError('No authenticated user.');
     }
+    _currentUserId = user.id;
     return user;
   }
 
@@ -66,14 +70,25 @@ class SupabaseSessionRepository {
     };
   }
 
-  Session _mapSessionRow(Map<String, dynamic> row) {
+  Session _mapSessionRow(
+    Map<String, dynamic> row, {
+    bool sharedWithMe = false,
+    String? sharedByUserId,
+  }) {
+    final ownerId = row['user_id'] as String? ?? _currentUserId ?? '';
+    final bool isShared =
+        sharedWithMe || (_currentUserId != null && ownerId != _currentUserId);
     final session = Session(
       id: row['id'] as String,
+      ownerId: ownerId,
+      agencyId: row['agency_id'] as String?,
       patientName:
           (row['session_patient_info']?['patient_name'] as String?) ?? '',
       startedAt:
           DateTime.tryParse(row['created_at'] as String? ?? '') ??
           DateTime.now(),
+      sharedWithMe: isShared,
+      sharedByUserId: sharedByUserId,
     );
     session.setIncidentInfo(_buildIncidentInfo(row));
     final patientRow = row['session_patient_info'];
@@ -98,9 +113,11 @@ class SupabaseSessionRepository {
     required String type,
   }) async {
     final user = _requireUser();
+    final agencyId = await _agencyService.getAgencyId();
 
     final payload = {
       'user_id': user.id,
+      'agency_id': agencyId,
       'incident_date': _formatDate(incidentDate),
       if (arrivalAt != null) 'arrival_at': arrivalAt.toIso8601String(),
       'incident_address': address,
@@ -116,6 +133,8 @@ class SupabaseSessionRepository {
     final session = Session(
       id: row['id'] as String,
       startedAt: DateTime.tryParse(row['created_at'] as String? ?? ''),
+      ownerId: user.id,
+      agencyId: agencyId,
     );
     session.setIncidentInfo(_buildIncidentInfo(row));
     return session;
@@ -185,8 +204,7 @@ class SupabaseSessionRepository {
     final safeWeight = (weightInPounds ?? 1) > 0 ? (weightInPounds ?? 1) : 1;
     final payload = {
       'session_id': sessionId,
-      'patient_name':
-          (name ?? '').isEmpty ? 'No Patient Name Entered' : name,
+      'patient_name': (name ?? '').isEmpty ? 'No Patient Name Entered' : name,
       'date_of_birth': _formatDate(fallbackDate),
       'sex': (sex.isEmpty ? 'U' : sex),
       'height_in_inches': safeHeight,
@@ -267,45 +285,129 @@ class SupabaseSessionRepository {
     await _client.from('sessions').delete().eq('id', sessionId);
   }
 
+  Future<List<AgencyMember>> fetchAgencyMembers() =>
+      _agencyService.fetchMembers();
+
+  Future<void> shareSession({
+    required String sessionId,
+    required String shareWithUserId,
+  }) async {
+    final user = _requireUser();
+    await _client.from('session_shares').upsert({
+      'session_id': sessionId,
+      'shared_with_user_id': shareWithUserId,
+      'shared_by_user_id': user.id,
+    });
+  }
+
   Future<List<Session>> fetchSessions() async {
     final user = _requireUser();
+    final selectColumns = '''
+      id,
+      user_id,
+      agency_id,
+      incident_date,
+      arrival_at,
+      incident_address,
+      incident_type,
+      created_at,
+      session_patient_info (
+        patient_name,
+        date_of_birth,
+        sex,
+        height_in_inches,
+        weight_in_pounds,
+        allergies,
+        medications,
+        medical_history,
+        chief_complaint
+      )
+    ''';
 
-    final rows = await _client
+    final ownRows = await _client
         .from('sessions')
-        .select('''
-          id,
-          incident_date,
-          arrival_at,
-          incident_address,
-          incident_type,
-          created_at,
-          session_patient_info (
-            patient_name,
-            date_of_birth,
-            sex,
-            height_in_inches,
-            weight_in_pounds,
-            allergies,
-            medications,
-            medical_history,
-            chief_complaint
-          )
-        ''')
+        .select(selectColumns)
         .eq('user_id', user.id)
         .order('created_at', ascending: false);
 
-    return (rows as List<dynamic>)
+    final sharedRows = await _client
+        .from('session_shares')
+        .select('session_id, shared_by_user_id, sessions!inner($selectColumns)')
+        .eq('shared_with_user_id', user.id);
+
+    final sessions = <Session>[];
+    sessions.addAll(
+      (ownRows as List<dynamic>).whereType<Map<String, dynamic>>().map(
+        (row) => _mapSessionRow(row, sharedWithMe: false),
+      ),
+    );
+
+    for (final item in sharedRows as List<dynamic>) {
+      if (item is Map<String, dynamic> &&
+          item['sessions'] is Map<String, dynamic>) {
+        final sRow = Map<String, dynamic>.from(item['sessions']);
+        sessions.add(
+          _mapSessionRow(
+            sRow,
+            sharedWithMe: true,
+            sharedByUserId: item['shared_by_user_id'] as String?,
+          ),
+        );
+      }
+    }
+
+    sessions.sort((a, b) => b.startedAt.compareTo(a.startedAt));
+    return sessions;
+  }
+
+  Future<List<AgencyMember>> fetchSharedWith(String sessionId) async {
+    final shareRows = await _client
+        .from('session_shares')
+        .select('shared_with_user_id')
+        .eq('session_id', sessionId);
+    final ids = (shareRows as List<dynamic>)
         .whereType<Map<String, dynamic>>()
-        .map(_mapSessionRow)
+        .map((row) => row['shared_with_user_id'] as String?)
+        .whereType<String>()
         .toList();
+    if (ids.isEmpty) return const [];
+
+    final memberRows = await _client
+        .from('agency_members')
+        .select('user_id, member_email, first_name, last_name')
+        .inFilter('user_id', ids);
+
+    final members = (memberRows as List<dynamic>)
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (row) => AgencyMember(
+            userId: row['user_id'] as String,
+            email: row['member_email'] as String? ?? '',
+            firstName: row['first_name'] as String?,
+            lastName: row['last_name'] as String?,
+          ),
+        )
+        .toList();
+
+    // In case some users lack agency_members rows, include them with email fallback.
+    final existingIds = members.map((m) => m.userId).toSet();
+    for (final id in ids) {
+      if (!existingIds.contains(id)) {
+        members.add(AgencyMember(userId: id, email: ''));
+      }
+    }
+
+    return members;
   }
 
   Future<Session?> fetchSessionDetail(String sessionId) async {
-    final user = _requireUser();
+    _requireUser();
     final row = await _client
         .from('sessions')
         .select('''
           id,
+          user_id,
+          agency_id,
           incident_date,
           arrival_at,
           incident_address,
@@ -332,10 +434,11 @@ class SupabaseSessionRepository {
             blood_glucose,
             temperature,
             notes,
-            recorded_at
+            recorded_at,
+            recording_started_at,
+            recording_ended_at
           )
         ''')
-        .eq('user_id', user.id)
         .eq('id', sessionId)
         .maybeSingle();
 
@@ -343,6 +446,9 @@ class SupabaseSessionRepository {
       return null;
     }
 
-    return _mapSessionRow(Map<String, dynamic>.from(row));
+    final shared =
+        _currentUserId != null &&
+        (row['user_id'] as String? ?? '') != _currentUserId;
+    return _mapSessionRow(Map<String, dynamic>.from(row), sharedWithMe: shared);
   }
 }

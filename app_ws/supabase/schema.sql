@@ -1,16 +1,63 @@
--- Enable extensions required for UUID generation
+-- Enable UUID extension
 create extension if not exists "pgcrypto";
 
--- Tear down legacy objects from the previous schema
-drop table if exists public.session_medical_history cascade;
-drop table if exists public.reports cascade;
-drop table if exists public.vitals cascade;
-drop table if exists public.patient_info cascade;
+------------------------------------------------------------
+-- AGENCIES
+------------------------------------------------------------
 
--- Core EMS session representing a single encounter
-create table if not exists public.sessions (
+create table public.agencies (
+  id uuid primary key default gen_random_uuid(),
+  code text not null unique,
+  name text,
+  created_at timestamptz not null default timezone('utc', now())
+);
+
+alter table public.agencies enable row level security;
+
+create policy "agencies_authenticated"
+  on public.agencies
+  for all
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
+
+------------------------------------------------------------
+-- AGENCY MEMBERS
+------------------------------------------------------------
+
+create table public.agency_members (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  agency_id uuid not null references public.agencies(id) on delete cascade,
+  member_email text not null,
+  joined_at timestamptz not null default timezone('utc', now())
+);
+
+alter table public.agency_members enable row level security;
+
+create policy "agency_members_self"
+  on public.agency_members
+  for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "agency_members_same_agency"
+  on public.agency_members
+  for select using (
+    exists (
+      select 1
+      from public.agency_members am2
+      where am2.user_id = auth.uid()
+        and am2.agency_id = agency_members.agency_id
+    )
+  );
+
+------------------------------------------------------------
+-- SESSIONS (Core encounter)
+------------------------------------------------------------
+
+create table public.sessions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
+  agency_id uuid not null references public.agencies(id) on delete cascade,
   incident_date date not null,
   arrival_at timestamptz,
   incident_address text not null,
@@ -19,25 +66,104 @@ create table if not exists public.sessions (
   updated_at timestamptz not null default timezone('utc', now())
 );
 
-create index if not exists sessions_user_incident_idx
+create index sessions_user_incident_idx
   on public.sessions (user_id, incident_date desc);
 
 alter table public.sessions enable row level security;
 
-create policy "sessions_select" on public.sessions
-  for select using (auth.uid() = user_id);
+------------------------------------------------------------
+-- SESSION SHARES
+------------------------------------------------------------
 
-create policy "sessions_insert" on public.sessions
-  for insert with check (auth.uid() = user_id);
+create table public.session_shares (
+  session_id uuid not null references public.sessions(id) on delete cascade,
+  shared_with_user_id uuid not null references auth.users(id) on delete cascade,
+  shared_by_user_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default timezone('utc', now()),
+  primary key (session_id, shared_with_user_id)
+);
 
-create policy "sessions_update" on public.sessions
-  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+alter table public.session_shares enable row level security;
 
-create policy "sessions_delete" on public.sessions
+create policy "session_shares_select"
+  on public.session_shares
+  for select using (
+    shared_with_user_id = auth.uid()
+    or shared_by_user_id = auth.uid()
+    or auth.role() = 'authenticated'
+  );
+
+create policy "session_shares_insert"
+  on public.session_shares
+  for insert with check (
+    shared_by_user_id = auth.uid()
+  );
+
+create policy "session_shares_delete"
+  on public.session_shares
+  for delete using (
+    shared_by_user_id = auth.uid()
+    or shared_with_user_id = auth.uid()
+  );
+
+------------------------------------------------------------
+-- SESSION POLICIES
+------------------------------------------------------------
+
+create policy "sessions_select"
+  on public.sessions
+  for select using (
+    auth.uid() = user_id
+    or exists (
+      select 1
+      from public.session_shares sh
+      where sh.session_id = sessions.id
+        and sh.shared_with_user_id = auth.uid()
+    )
+  );
+
+create policy "sessions_insert"
+  on public.sessions
+  for insert with check (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from public.agency_members am
+      where am.user_id = auth.uid()
+        and am.agency_id = sessions.agency_id
+    )
+  );
+
+create policy "sessions_update"
+  on public.sessions
+  for update using (
+    auth.uid() = user_id
+    or exists (
+      select 1
+      from public.session_shares sh
+      where sh.session_id = sessions.id
+        and sh.shared_with_user_id = auth.uid()
+    )
+  )
+  with check (
+    auth.uid() = user_id
+    or exists (
+      select 1
+      from public.session_shares sh
+      where sh.session_id = sessions.id
+        and sh.shared_with_user_id = auth.uid()
+    )
+  );
+
+create policy "sessions_delete"
+  on public.sessions
   for delete using (auth.uid() = user_id);
 
--- One-to-one patient details captured for each session
-create table if not exists public.session_patient_info (
+------------------------------------------------------------
+-- PATIENT INFO
+------------------------------------------------------------
+
+create table public.session_patient_info (
   session_id uuid primary key references public.sessions(id) on delete cascade,
   patient_name text not null,
   date_of_birth date not null,
@@ -53,55 +179,103 @@ create table if not exists public.session_patient_info (
 
 alter table public.session_patient_info enable row level security;
 
-create policy "session_patient_info_select" on public.session_patient_info
+create policy "spi_select"
+  on public.session_patient_info
   for select using (
     exists (
       select 1
       from public.sessions s
       where s.id = session_patient_info.session_id
-        and s.user_id = auth.uid()
+        and (
+          s.user_id = auth.uid()
+          or exists (
+            select 1
+            from public.session_shares sh
+            where sh.session_id = s.id
+              and sh.shared_with_user_id = auth.uid()
+          )
+        )
     )
   );
 
-create policy "session_patient_info_insert" on public.session_patient_info
+create policy "spi_insert"
+  on public.session_patient_info
   for insert with check (
     exists (
       select 1
       from public.sessions s
       where s.id = session_patient_info.session_id
-        and s.user_id = auth.uid()
+        and (
+          s.user_id = auth.uid()
+          or exists (
+            select 1
+            from public.session_shares sh
+            where sh.session_id = s.id
+              and sh.shared_with_user_id = auth.uid()
+          )
+        )
     )
   );
 
-create policy "session_patient_info_update" on public.session_patient_info
+create policy "spi_update"
+  on public.session_patient_info
   for update using (
     exists (
       select 1
       from public.sessions s
       where s.id = session_patient_info.session_id
-        and s.user_id = auth.uid()
+        and (
+          s.user_id = auth.uid()
+          or exists (
+            select 1
+            from public.session_shares sh
+            where sh.session_id = s.id
+              and sh.shared_with_user_id = auth.uid()
+          )
+        )
     )
-  ) with check (
+  )
+  with check (
     exists (
       select 1
       from public.sessions s
       where s.id = session_patient_info.session_id
-        and s.user_id = auth.uid()
+        and (
+          s.user_id = auth.uid()
+          or exists (
+            select 1
+            from public.session_shares sh
+            where sh.session_id = s.id
+              and sh.shared_with_user_id = auth.uid()
+          )
+        )
     )
   );
 
-create policy "session_patient_info_delete" on public.session_patient_info
+create policy "spi_delete"
+  on public.session_patient_info
   for delete using (
     exists (
       select 1
       from public.sessions s
       where s.id = session_patient_info.session_id
-        and s.user_id = auth.uid()
+        and (
+          s.user_id = auth.uid()
+          or exists (
+            select 1
+            from public.session_shares sh
+            where sh.session_id = s.id
+              and sh.shared_with_user_id = auth.uid()
+          )
+        )
     )
   );
 
--- Multiple vitals snapshots per session
-create table if not exists public.session_vitals (
+------------------------------------------------------------
+-- VITALS
+------------------------------------------------------------
+
+create table public.session_vitals (
   id uuid primary key default gen_random_uuid(),
   session_id uuid not null references public.sessions(id) on delete cascade,
   pulse_rate smallint not null check (pulse_rate >= 0),
@@ -117,54 +291,99 @@ create table if not exists public.session_vitals (
   recorded_at timestamptz not null default timezone('utc', now())
 );
 
-create index if not exists session_vitals_session_idx
+create index session_vitals_session_idx
   on public.session_vitals (session_id, recorded_at desc);
 
 alter table public.session_vitals enable row level security;
 
-create policy "session_vitals_select" on public.session_vitals
+create policy "session_vitals_select"
+  on public.session_vitals
   for select using (
     exists (
       select 1
       from public.sessions s
       where s.id = session_vitals.session_id
-        and s.user_id = auth.uid()
+        and (
+          s.user_id = auth.uid()
+          or exists (
+            select 1
+            from public.session_shares sh
+            where sh.session_id = s.id
+              and sh.shared_with_user_id = auth.uid()
+          )
+        )
     )
   );
 
-create policy "session_vitals_insert" on public.session_vitals
+create policy "session_vitals_insert"
+  on public.session_vitals
   for insert with check (
     exists (
       select 1
       from public.sessions s
       where s.id = session_vitals.session_id
-        and s.user_id = auth.uid()
+        and (
+          s.user_id = auth.uid()
+          or exists (
+            select 1
+            from public.session_shares sh
+            where sh.session_id = s.id
+              and sh.shared_with_user_id = auth.uid()
+          )
+        )
     )
   );
 
-create policy "session_vitals_update" on public.session_vitals
+create policy "session_vitals_update"
+  on public.session_vitals
   for update using (
     exists (
       select 1
       from public.sessions s
       where s.id = session_vitals.session_id
-        and s.user_id = auth.uid()
+        and (
+          s.user_id = auth.uid()
+          or exists (
+            select 1
+            from public.session_shares sh
+            where sh.session_id = s.id
+              and sh.shared_with_user_id = auth.uid()
+          )
+        )
     )
-  ) with check (
+  )
+  with check (
     exists (
       select 1
       from public.sessions s
       where s.id = session_vitals.session_id
-        and s.user_id = auth.uid()
+        and (
+          s.user_id = auth.uid()
+          or exists (
+            select 1
+            from public.session_shares sh
+            where sh.session_id = s.id
+              and sh.shared_with_user_id = auth.uid()
+          )
+        )
     )
   );
 
-create policy "session_vitals_delete" on public.session_vitals
+create policy "session_vitals_delete"
+  on public.session_vitals
   for delete using (
     exists (
       select 1
       from public.sessions s
       where s.id = session_vitals.session_id
-        and s.user_id = auth.uid()
+        and (
+          s.user_id = auth.uid()
+          or exists (
+            select 1
+            from public.session_shares sh
+            where sh.session_id = s.id
+              and sh.shared_with_user_id = auth.uid()
+          )
+        )
     )
   );

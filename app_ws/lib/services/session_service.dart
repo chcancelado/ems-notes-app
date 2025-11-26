@@ -5,12 +5,20 @@ class Session {
   final String id;
   String patientName;
   final DateTime startedAt;
+  final String ownerId;
+  final String? agencyId;
+  final bool sharedWithMe;
+  final String? sharedByUserId;
   final Map<String, dynamic> data;
 
   Session({
     required this.id,
     String? patientName,
     DateTime? startedAt,
+    required this.ownerId,
+    this.agencyId,
+    this.sharedWithMe = false,
+    this.sharedByUserId,
     Map<String, dynamic>? data,
   }) : patientName = patientName ?? '',
        startedAt = startedAt ?? DateTime.now(),
@@ -105,6 +113,10 @@ class Session {
       'id': id,
       'patientName': patientName,
       'startedAt': startedAt.toIso8601String(),
+      'ownerId': ownerId,
+      'agencyId': agencyId,
+      'sharedWithMe': sharedWithMe,
+      'sharedByUserId': sharedByUserId,
       'data': data,
     };
   }
@@ -115,6 +127,10 @@ class Session {
       id: json['id'] as String,
       patientName: json['patientName'] as String?,
       startedAt: DateTime.parse(json['startedAt'] as String),
+      ownerId: json['ownerId'] as String? ?? '',
+      agencyId: json['agencyId'] as String?,
+      sharedWithMe: json['sharedWithMe'] as bool? ?? false,
+      sharedByUserId: json['sharedByUserId'] as String?,
       data: Map<String, dynamic>.from(json['data'] ?? {}),
     );
   }

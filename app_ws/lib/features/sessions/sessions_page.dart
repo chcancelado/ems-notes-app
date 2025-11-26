@@ -3,11 +3,14 @@ import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
 
 import '../../services/session_service.dart';
 import '../../services/supabase_session_repository.dart';
+import '../../services/agency_service.dart';
 import '../../widgets/patient_summary_dialog.dart';
 import '../../widgets/sidebar_layout.dart';
 
 class SessionsPage extends StatefulWidget {
-  const SessionsPage({super.key});
+  const SessionsPage({super.key, this.showSharedOnly = false});
+
+  final bool showSharedOnly;
 
   @override
   State<SessionsPage> createState() => _SessionsPageState();
@@ -22,19 +25,55 @@ class _SessionsPageState extends State<SessionsPage> {
   static const List<int> _pageSizeOptions = [5, 10, 25, 100];
   int _rowsPerPage = 10;
   int _pageIndex = 0;
+  String? _currentUserId;
+  List<AgencyMember> _agencyMembers = const [];
+  late bool _showSharedOnly;
 
   @override
   void initState() {
     super.initState();
+    _currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    _showSharedOnly = widget.showSharedOnly;
     _loadSessions();
+    _loadAgencyMembers();
+  }
+
+  String _memberNameFor(String? userId) {
+    if (userId == null) return '';
+    final member = _agencyMembers.firstWhere(
+      (m) => m.userId == userId,
+      orElse: () => AgencyMember(userId: userId, email: ''),
+    );
+    final nameParts = [
+      if ((member.firstName ?? '').isNotEmpty) member.firstName,
+      if ((member.lastName ?? '').isNotEmpty) member.lastName,
+    ].whereType<String>().toList();
+    return nameParts.isEmpty ? member.email : nameParts.join(' ');
+  }
+
+  Future<void> _loadAgencyMembers() async {
+    try {
+      final members = await _repository.fetchAgencyMembers();
+      if (mounted) {
+        setState(() {
+          _agencyMembers = members;
+        });
+      }
+    } catch (_) {
+      // Ignore failures here; sharing UI will handle errors when invoked.
+    }
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _showSharedOnly = widget.showSharedOnly;
     final args =
         ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
     final message = args?['snackbarMessage'] as String?;
+    if (args?['sharedOnly'] is bool) {
+      _showSharedOnly = args!['sharedOnly'] as bool;
+    }
     if (message != null && !_hasHandledSnackbar) {
       _hasHandledSnackbar = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -93,6 +132,178 @@ class _SessionsPageState extends State<SessionsPage> {
     );
   }
 
+  Future<void> _shareSession(Session session) async {
+    if (_currentUserId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You must be logged in to share.')),
+      );
+      return;
+    }
+    final alreadyShared = await _repository.fetchSharedWith(session.id);
+    if (_agencyMembers.isEmpty) {
+      await _loadAgencyMembers();
+    }
+    final members = _agencyMembers
+        .where((m) => m.userId != _currentUserId)
+        .toList();
+    if (members.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No other agency members to share with.')),
+      );
+      return;
+    }
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Share Session'),
+          content: SizedBox(
+            width: 320,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: members.length,
+              itemBuilder: (context, index) {
+                final member = members[index];
+                final isAlreadyShared = alreadyShared.any(
+                  (shared) => shared.userId == member.userId,
+                );
+                final nameParts = [
+                  if ((member.firstName ?? '').isNotEmpty) member.firstName,
+                  if ((member.lastName ?? '').isNotEmpty) member.lastName,
+                ].whereType<String>().toList();
+                final displayName = nameParts.isEmpty
+                    ? member.email
+                    : nameParts.join(' ');
+                return ListTile(
+                  leading: const Icon(Icons.person_add_alt),
+                  title: Text(
+                    isAlreadyShared
+                        ? '$displayName (already shared)'
+                        : displayName,
+                    style: isAlreadyShared
+                        ? TextStyle(color: Colors.grey.shade600)
+                        : null,
+                  ),
+                  subtitle: isAlreadyShared ? Text(member.email) : null,
+                  enabled: !isAlreadyShared,
+                  onTap: isAlreadyShared
+                      ? null
+                      : () async {
+                          Navigator.of(dialogContext).pop();
+                          try {
+                            await _repository.shareSession(
+                              sessionId: session.id,
+                              shareWithUserId: member.userId,
+                            );
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Shared with ${member.email}'),
+                                ),
+                              );
+                            }
+                          } catch (error) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Failed to share: $error'),
+                                ),
+                              );
+                            }
+                          }
+                        },
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _showSharedWith(Session session) async {
+    try {
+      final shared = await _repository.fetchSharedWith(session.id);
+      final creatorName = _memberNameFor(session.ownerId).isNotEmpty
+          ? _memberNameFor(session.ownerId)
+          : session.ownerId;
+      if (!mounted) return;
+      await showDialog(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Shared With'),
+            content: SizedBox(
+              width: 320,
+              child: shared.isEmpty
+                  ? const Text('This session is not shared.')
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Creator: $creatorName${session.ownerId == _currentUserId ? ' (me)' : ''}',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text('Shared with:'),
+                        const SizedBox(height: 8),
+                        Flexible(
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: shared.length,
+                            itemBuilder: (context, index) {
+                              final member = shared[index];
+                              final names = [
+                                if ((member.firstName ?? '').isNotEmpty)
+                                  member.firstName,
+                                if ((member.lastName ?? '').isNotEmpty)
+                                  member.lastName,
+                              ].whereType<String>().toList();
+                              final baseName = names.isEmpty
+                                  ? member.email
+                                  : names.join(' ');
+                              final meLabel = member.userId == _currentUserId
+                                  ? ' (me)'
+                                  : '';
+                              final display = '$baseName$meLabel';
+                              return ListTile(
+                                dense: true,
+                                leading: const Icon(Icons.person),
+                                title: Text(display),
+                                subtitle: Text(member.email),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to load shares: $error')));
+    }
+  }
+
   Future<void> _showSummary(Session session) async {
     Session? latest = sessionService.findSessionById(session.id) ?? session;
     try {
@@ -105,9 +316,7 @@ class _SessionsPageState extends State<SessionsPage> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not load vitals for summary: $error'),
-          ),
+          SnackBar(content: Text('Could not load vitals for summary: $error')),
         );
       }
     }
@@ -179,8 +388,10 @@ class _SessionsPageState extends State<SessionsPage> {
   Widget build(BuildContext context) {
     final navigator = Navigator.of(context);
     return SidebarLayout(
-      title: 'Session History',
-      activeDestination: SidebarDestination.sessions,
+      title: _showSharedOnly ? 'Shared With Me' : 'My Sessions',
+      activeDestination: _showSharedOnly
+          ? SidebarDestination.sharedSessions
+          : SidebarDestination.sessions,
       actions: [
         IconButton(
           onPressed: _isLoading ? null : _refresh,
@@ -198,28 +409,34 @@ class _SessionsPageState extends State<SessionsPage> {
         initialData: sessionService.sessions,
         builder: (context, snapshot) {
           final sessions = snapshot.data ?? const <Session>[];
-          final sortedSessions = [...sessions]
+          final ownSessions = sessions.where((s) => !s.sharedWithMe).toList()
             ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
-          final totalSessions = sortedSessions.length;
-          final totalPages =
-              totalSessions == 0 ? 1 : ((totalSessions - 1) ~/ _rowsPerPage) + 1;
+          final sharedSessions = sessions.where((s) => s.sharedWithMe).toList()
+            ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
+          final totalSessions = _showSharedOnly
+              ? sharedSessions.length
+              : ownSessions.length;
+          final totalPages = totalSessions == 0
+              ? 1
+              : ((totalSessions - 1) ~/ _rowsPerPage) + 1;
           final int clampedPageIndex = _pageIndex < 0
               ? 0
               : _pageIndex >= totalPages
-                  ? totalPages - 1
-                  : _pageIndex;
-          final int startIndex =
-              totalSessions == 0 ? 0 : clampedPageIndex * _rowsPerPage;
+              ? totalPages - 1
+              : _pageIndex;
+          final int startIndex = totalSessions == 0
+              ? 0
+              : clampedPageIndex * _rowsPerPage;
           final int endIndex = totalSessions == 0
               ? 0
               : (startIndex + _rowsPerPage > totalSessions
-                  ? totalSessions
-                  : startIndex + _rowsPerPage);
-          final visibleSessions =
-              totalSessions == 0 ? <Session>[] : sortedSessions.sublist(
-                startIndex,
-                endIndex,
-              );
+                    ? totalSessions
+                    : startIndex + _rowsPerPage);
+          final visibleSessions = totalSessions == 0
+              ? <Session>[]
+              : (_showSharedOnly
+                    ? sharedSessions.sublist(startIndex, endIndex)
+                    : ownSessions.sublist(startIndex, endIndex));
 
           if (_isLoading && sessions.isEmpty) {
             return const Center(child: CircularProgressIndicator());
@@ -314,17 +531,26 @@ class _SessionsPageState extends State<SessionsPage> {
                     itemBuilder: (context, index) {
                       final session = visibleSessions[index];
                       final incident = session.incidentInfo;
-                      final address =
-                          (incident['address'] as String? ?? '').trim();
-                      final incidentType =
-                          (incident['type'] as String? ?? '').trim();
+                      final address = (incident['address'] as String? ?? '')
+                          .trim();
+                      final incidentType = (incident['type'] as String? ?? '')
+                          .trim();
                       final displayAddress = address.isEmpty
                           ? 'No Address Entered'
                           : address;
+                      final isShared =
+                          session.sharedWithMe &&
+                          (_currentUserId != null &&
+                              session.ownerId != _currentUserId);
+                      final addressLine = isShared
+                          ? '$displayAddress (shared with me)'
+                          : displayAddress;
                       final displayName = session.patientName.isNotEmpty
                           ? session.patientName
                           : 'No Patient Name Entered';
-                      final isDeleting = _deletingSessionIds.contains(session.id);
+                      final isDeleting = _deletingSessionIds.contains(
+                        session.id,
+                      );
                       return Card(
                         margin: const EdgeInsets.only(bottom: 12.0),
                         child: Padding(
@@ -345,11 +571,11 @@ class _SessionsPageState extends State<SessionsPage> {
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        displayAddress,
+                                        addressLine,
                                         style: theme.textTheme.bodyLarge
                                             ?.copyWith(
-                                          fontWeight: FontWeight.bold,
-                                        ),
+                                              fontWeight: FontWeight.bold,
+                                            ),
                                       ),
                                       const SizedBox(height: 2),
                                       if (incidentType.isNotEmpty)
@@ -357,8 +583,8 @@ class _SessionsPageState extends State<SessionsPage> {
                                           incidentType,
                                           style: theme.textTheme.bodyLarge
                                               ?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                          ),
+                                                fontWeight: FontWeight.bold,
+                                              ),
                                         ),
                                       const SizedBox(height: 4),
                                       Text(
@@ -369,9 +595,7 @@ class _SessionsPageState extends State<SessionsPage> {
                                       Text(
                                         _formatDateTime(session.startedAt),
                                         style: theme.textTheme.bodyMedium
-                                            ?.copyWith(
-                                          color: Colors.grey[700],
-                                        ),
+                                            ?.copyWith(color: Colors.grey[700]),
                                       ),
                                     ],
                                   ),
@@ -394,8 +618,10 @@ class _SessionsPageState extends State<SessionsPage> {
                                   onPressed: isDeleting
                                       ? null
                                       : () => _showSummary(session),
-                                  icon:
-                                      const Icon(Icons.receipt_long, size: 20),
+                                  icon: const Icon(
+                                    Icons.receipt_long,
+                                    size: 20,
+                                  ),
                                   label: const Text('Summary'),
                                 ),
                               ),
@@ -409,19 +635,24 @@ class _SessionsPageState extends State<SessionsPage> {
                                       vertical: 10,
                                     ),
                                     minimumSize: const Size(0, 44),
-                                    backgroundColor:
-                                        theme.colorScheme.primary,
+                                    backgroundColor: theme.colorScheme.primary,
                                     foregroundColor: Colors.white,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                   ),
-                                  onPressed:
-                                      isDeleting ? null : () => _addVitals(session),
-                                  icon: const Icon(Icons.monitor_heart, size: 20),
+                                  onPressed: isDeleting
+                                      ? null
+                                      : () => _addVitals(session),
+                                  icon: const Icon(
+                                    Icons.monitor_heart,
+                                    size: 20,
+                                  ),
                                   label: const Text(
                                     'Add Vitals',
-                                    style: TextStyle(fontWeight: FontWeight.w600),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -450,6 +681,12 @@ class _SessionsPageState extends State<SessionsPage> {
                                             case 'editPatient':
                                               _editPatient(session);
                                               break;
+                                            case 'share':
+                                              _shareSession(session);
+                                              break;
+                                            case 'sharedWith':
+                                              _showSharedWith(session);
+                                              break;
                                             case 'delete':
                                               _deleteSession(session);
                                               break;
@@ -475,6 +712,22 @@ class _SessionsPageState extends State<SessionsPage> {
                                             ),
                                           ),
                                           PopupMenuItem(
+                                            value: 'share',
+                                            child: ListTile(
+                                              leading: Icon(Icons.share),
+                                              title: Text('Share Session'),
+                                            ),
+                                          ),
+                                          PopupMenuItem(
+                                            value: 'sharedWith',
+                                            child: ListTile(
+                                              leading: Icon(
+                                                Icons.visibility_outlined,
+                                              ),
+                                              title: Text('View Shared With'),
+                                            ),
+                                          ),
+                                          PopupMenuItem(
                                             value: 'delete',
                                             child: ListTile(
                                               leading: Icon(Icons.delete),
@@ -485,8 +738,9 @@ class _SessionsPageState extends State<SessionsPage> {
                                         child: Container(
                                           decoration: BoxDecoration(
                                             color: theme.colorScheme.surface,
-                                            borderRadius:
-                                                BorderRadius.circular(12),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
                                             border: Border.all(
                                               color: Colors.grey.shade300,
                                             ),
@@ -506,8 +760,10 @@ class _SessionsPageState extends State<SessionsPage> {
                 ),
               ),
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16.0,
+                  vertical: 12.0,
+                ),
                 child: Row(
                   children: [
                     const Text('Rows per page:'),
