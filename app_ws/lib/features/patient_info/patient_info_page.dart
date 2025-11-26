@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
 
+import '../../models/session_models.dart';
 import '../../services/session_service.dart';
 import '../../services/supabase_session_repository.dart';
 import '../../widgets/app_input_decorations.dart';
@@ -94,8 +95,9 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
 
   Future<void> _initializeFromSources(String sessionId) async {
     final session = sessionService.findSessionById(sessionId);
-    if (session != null && session.patientInfo.isNotEmpty) {
-      _applyPatientInfo(session.patientInfo);
+    final cached = session?.patientInfoModel;
+    if (cached != null) {
+      _applyPatientInfo(cached);
     }
 
     setState(() {
@@ -104,7 +106,7 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
 
     try {
       final remote = await _repository.fetchPatientInfo(sessionId);
-      if (remote != null && remote.isNotEmpty) {
+      if (remote != null) {
         _applyPatientInfo(remote);
         sessionService.updatePatientInfo(sessionId, remote);
       }
@@ -123,32 +125,19 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
     }
   }
 
-  void _applyPatientInfo(Map<String, dynamic> patientInfo) {
+  void _applyPatientInfo(PatientInfo patientInfo) {
     _isHydrating = true;
     setState(() {
-      final name = patientInfo['name'] as String?;
+      final name = patientInfo.name;
       _nameController.text =
-          name != null && name.isNotEmpty && name != _defaultPatientName
-          ? name
-          : '';
-      final dobString = patientInfo['date_of_birth'] as String?;
-      if (dobString != null) {
-        final parsed = DateTime.tryParse(dobString);
-        if (parsed != null) {
-          _dateOfBirth = parsed;
-          _dobController.text = '${parsed.month}/${parsed.day}/${parsed.year}';
-        }
+          name.isNotEmpty && name != _defaultPatientName ? name : '';
+      final dob = patientInfo.dateOfBirth;
+      if (dob != null) {
+        _dateOfBirth = dob;
+        _dobController.text = '${dob.month}/${dob.day}/${dob.year}';
       }
-      _sex = (patientInfo['sex'] as String?) ?? 'U';
-      final dynamic heightValue = patientInfo['height_in_inches'];
-      int? heightInches;
-      if (heightValue is int) {
-        heightInches = heightValue;
-      } else if (heightValue is double) {
-        heightInches = heightValue.round();
-      } else if (heightValue is String) {
-        heightInches = int.tryParse(heightValue);
-      }
+      _sex = patientInfo.sex;
+      final heightInches = patientInfo.heightInInches;
       if (heightInches != null && heightInches > 0) {
         final feet = heightInches ~/ 12;
         final inches = heightInches % 12;
@@ -158,15 +147,12 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
         _heightFeetController.clear();
         _heightInchesController.clear();
       }
-      final weight = patientInfo['weight_in_pounds'];
+      final weight = patientInfo.weightInPounds;
       _weightController.text = weight == null ? '' : '$weight';
-      _allergiesController.text = (patientInfo['allergies'] as String?) ?? '';
-      _medicationsController.text =
-          (patientInfo['medications'] as String?) ?? '';
-      _chiefComplaintController.text =
-          (patientInfo['chief_complaint'] as String?) ?? '';
-      _medicalHistoryController.text =
-          (patientInfo['medical_history'] as String?) ?? '';
+      _allergiesController.text = patientInfo.allergies ?? '';
+      _medicationsController.text = patientInfo.medications ?? '';
+      _chiefComplaintController.text = patientInfo.chiefComplaint ?? '';
+      _medicalHistoryController.text = patientInfo.medicalHistory;
       _hasUnsavedChanges = false;
     });
     _isHydrating = false;
