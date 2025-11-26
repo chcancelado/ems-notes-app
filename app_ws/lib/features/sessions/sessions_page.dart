@@ -79,6 +79,7 @@ class _SessionsPageState extends State<SessionsPage> {
     if (message != null && !_hasHandledSnackbar) {
       _hasHandledSnackbar = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(message)));
@@ -147,8 +148,9 @@ class _SessionsPageState extends State<SessionsPage> {
   }
 
   Future<void> _shareSession(Session session) async {
+    final messenger = ScaffoldMessenger.of(context);
     if (_currentUserId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(content: Text('You must be logged in to share.')),
       );
       return;
@@ -163,7 +165,7 @@ class _SessionsPageState extends State<SessionsPage> {
         .toList();
     if (members.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(content: Text('No other agency members to share with.')),
       );
       return;
@@ -213,7 +215,7 @@ class _SessionsPageState extends State<SessionsPage> {
                               shareWithUserId: member.userId,
                             );
                             if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
+                              messenger.showSnackBar(
                                 SnackBar(
                                   content: Text('Shared with ${member.email}'),
                                 ),
@@ -221,7 +223,7 @@ class _SessionsPageState extends State<SessionsPage> {
                             }
                           } catch (error) {
                             if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
+                              messenger.showSnackBar(
                                 SnackBar(
                                   content: Text('Failed to share: $error'),
                                 ),

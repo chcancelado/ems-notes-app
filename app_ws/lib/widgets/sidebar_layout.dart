@@ -78,9 +78,10 @@ class _SidebarLayoutState extends State<SidebarLayout> {
   }
 
   Future<void> _handleDestinationTap(SidebarDestination destination) async {
+    final navigator = Navigator.of(context);
     if (destination == widget.activeDestination) {
       if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
-        Navigator.of(context).pop();
+        navigator.pop();
       }
       return;
     }
@@ -92,18 +93,19 @@ class _SidebarLayoutState extends State<SidebarLayout> {
     }
     if (!mounted) return;
     if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
-      Navigator.of(context).pop();
+      navigator.pop();
     }
-    Navigator.of(context).pushReplacementNamed(_routeFor(destination));
+    navigator.pushReplacementNamed(_routeFor(destination));
   }
 
   Future<void> _handleHelpTap() async {
+    final navigator = Navigator.of(context);
     final canLeave = await _canLeave();
     if (!canLeave || !mounted) return;
     if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
-      Navigator.of(context).pop();
+      navigator.pop();
     }
-    Navigator.of(context).pushReplacementNamed('/help');
+    navigator.pushReplacementNamed('/help');
   }
 
   Widget _footerBar(BuildContext context) {
@@ -140,13 +142,14 @@ class _SidebarLayoutState extends State<SidebarLayout> {
 
   @override
   Widget build(BuildContext context) {
+    final navigator = Navigator.of(context);
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
         final canLeave = await _canLeave();
         if (canLeave && mounted) {
-          Navigator.of(context).maybePop();
+          navigator.maybePop();
         }
       },
       child: LayoutBuilder(
@@ -193,13 +196,14 @@ class _SidebarLayoutState extends State<SidebarLayout> {
                 ? IconButton(
                     icon: const Icon(Icons.arrow_back),
                     onPressed: () async {
+                      final navigator = Navigator.of(context);
                       final canLeave = await _canLeave();
                       if (!canLeave) return;
                       if (!mounted) return;
-                      if (Navigator.of(context).canPop()) {
-                        Navigator.of(context).maybePop();
+                      if (navigator.canPop()) {
+                        navigator.maybePop();
                       } else {
-                        Navigator.of(context).pushReplacementNamed('/home');
+                        navigator.pushReplacementNamed('/home');
                       }
                     },
                   )
@@ -250,11 +254,12 @@ class _SidebarLayoutState extends State<SidebarLayout> {
 
   Future<void> _handleLogout() async {
     if (widget.onLogout == null) return;
+    final navigator = Navigator.of(context);
     final canLeave = await _canLeave();
     if (!canLeave) return;
     if (!mounted) return;
     if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
-      Navigator.of(context).pop();
+      navigator.pop();
     }
     await widget.onLogout!();
   }

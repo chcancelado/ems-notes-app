@@ -469,9 +469,10 @@ class _SessionStartPageState extends State<SessionStartPage> {
       activeDestination: _activeDestination,
       onNavigateAway: _confirmLeave,
       onLogout: () async {
+        final navigator = Navigator.of(context);
         await Supabase.instance.client.auth.signOut();
         if (!mounted) return;
-        Navigator.of(context).pushReplacementNamed('/login');
+        navigator.pushReplacementNamed('/login');
       },
       body: Align(
         alignment: Alignment.topCenter,
