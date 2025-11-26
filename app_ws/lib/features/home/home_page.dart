@@ -66,51 +66,57 @@ class _HomePageState extends State<HomePage> {
                 ).textTheme.bodyLarge?.copyWith(color: Colors.grey[600]),
               ),
               const SizedBox(height: 32.0),
-              Wrap(
-                spacing: 20,
-                runSpacing: 18,
-                alignment: WrapAlignment.center,
-                children: [
-                  _buildActionCard(
-                    context,
-                    title: 'Patient Info',
-                    subtitle: 'Document patient demographics and history',
-                    icon: Icons.badge_outlined,
-                    gradientColors: [
-                      const Color(0xFF123E73),
-                      const Color(0xFF0B3D91),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final bool isNarrow = constraints.maxWidth < 700;
+                  final cards = [
+                    _buildActionCard(
+                      context,
+                      title: 'Start a New Session',
+                      subtitle: 'Begin documenting a new patient encounter',
+                      icon: Icons.add_circle_outline,
+                      gradientColors: [
+                        Colors.blue.shade400,
+                        Colors.blue.shade600,
+                      ],
+                      onTap: () {
+                        Navigator.of(context).pushNamed('/sessions/new');
+                      },
+                    ),
+                    _buildActionCard(
+                      context,
+                      title: 'View Session History',
+                      subtitle: 'Access previous patient sessions and reports',
+                      icon: Icons.history,
+                      gradientColors: [
+                        Colors.blueGrey.shade400,
+                        Colors.blueGrey.shade600,
+                      ],
+                      onTap: () {
+                        Navigator.of(context).pushNamed('/sessions');
+                      },
+                    ),
+                  ];
+
+                  if (isNarrow) {
+                    return Column(
+                      children: [
+                        cards[0],
+                        const SizedBox(height: 18),
+                        cards[1],
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(width: 320, child: cards[0]),
+                      const SizedBox(width: 20),
+                      SizedBox(width: 320, child: cards[1]),
                     ],
-                    onTap: () {
-                      Navigator.of(context).pushNamed('/patient-info');
-                    },
-                  ),
-                  _buildActionCard(
-                    context,
-                    title: 'Vitals',
-                    subtitle: 'Record vital signs and observations',
-                    icon: Icons.monitor_heart,
-                    gradientColors: [
-                      Colors.blueGrey.shade500,
-                      Colors.blueGrey.shade700,
-                    ],
-                    onTap: () {
-                      Navigator.of(context).pushNamed('/vitals');
-                    },
-                  ),
-                  _buildActionCard(
-                    context,
-                    title: 'Report',
-                    subtitle: 'Review and share your session report',
-                    icon: Icons.receipt_long,
-                    gradientColors: [
-                      const Color(0xFFE53935),
-                      const Color(0xFFB71C1C),
-                    ],
-                    onTap: () {
-                      Navigator.of(context).pushNamed('/report');
-                    },
-                  ),
-                ],
+                  );
+                },
               ),
             ],
           ),
