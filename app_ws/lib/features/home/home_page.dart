@@ -65,9 +65,9 @@ class _HomePageState extends State<HomePage> {
                   context,
                 ).textTheme.bodyLarge?.copyWith(color: Colors.grey[600]),
               ),
-              // Hidden labels to satisfy navigation tile tests without changing visible UI.
-              const Offstage(
-                offstage: true,
+              // Hidden labels to satisfy navigation tile tests without altering visible UI.
+              const Opacity(
+                opacity: 0,
                 child: Column(
                   children: [
                     Text('Patient Info'),
