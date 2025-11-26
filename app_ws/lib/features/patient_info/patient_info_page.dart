@@ -45,6 +45,7 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
   bool _isLoading = false;
   bool _hasUnsavedChanges = false;
   bool _isHydrating = false;
+  bool _fromSharedSessions = false;
 
   String? get _incidentType {
     if (_sessionId == null) return null;
@@ -79,6 +80,7 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
     final args =
         ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
     _isEditing = args?['isEditing'] as bool? ?? false;
+    _fromSharedSessions = args?['fromSharedSessions'] as bool? ?? false;
     final sessionId = args?['sessionId'] as String?;
 
     if (sessionId != null) {
@@ -129,8 +131,9 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
     _isHydrating = true;
     setState(() {
       final name = patientInfo.name;
-      _nameController.text =
-          name.isNotEmpty && name != _defaultPatientName ? name : '';
+      _nameController.text = name.isNotEmpty && name != _defaultPatientName
+          ? name
+          : '';
       final dob = patientInfo.dateOfBirth;
       if (dob != null) {
         _dateOfBirth = dob;
@@ -157,6 +160,18 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
     });
     _isHydrating = false;
   }
+
+  SidebarDestination get _activeDestination {
+    if (_isEditing) {
+      return _fromSharedSessions
+          ? SidebarDestination.sharedSessions
+          : SidebarDestination.sessions;
+    }
+    return SidebarDestination.newSession;
+  }
+
+  String get _sessionsRoute =>
+      _fromSharedSessions ? '/sessions/shared' : '/sessions';
 
   void _handleFieldChange() {
     if (_isHydrating) {
@@ -223,19 +238,17 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
 
   Future<void> _pickDateOfBirth() async {
     final initialDate = _dateOfBirth ?? DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
+    final picked = await _showDropdownDatePicker(
       initialDate: initialDate,
-      firstDate: DateTime(1900),
-      lastDate: DateTime.now(),
+      minYear: 1900,
+      maxYear: DateTime.now().year,
     );
-    if (picked != null) {
-      setState(() {
-        _dateOfBirth = picked;
-        _dobController.text = '${picked.month}/${picked.day}/${picked.year}';
-        _hasUnsavedChanges = true;
-      });
-    }
+    if (picked == null) return;
+    setState(() {
+      _dateOfBirth = picked;
+      _dobController.text = '${picked.month}/${picked.day}/${picked.year}';
+      _hasUnsavedChanges = true;
+    });
   }
 
   Future<void> _saveAndContinue() async {
@@ -289,9 +302,12 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
 
       if (_isEditing) {
         Navigator.of(context).pushReplacementNamed(
-          '/sessions',
+          _sessionsRoute,
           arguments: wasDirty
-              ? {'snackbarMessage': 'Patient information updated.'}
+              ? {
+                  'snackbarMessage': 'Patient information updated.',
+                  'sharedOnly': _fromSharedSessions,
+                }
               : null,
         );
       } else {
@@ -324,6 +340,15 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
     );
   }
 
+  Future<void> _discardEdits() async {
+    final canLeave = await _confirmLeave();
+    if (!canLeave || !mounted) return;
+    Navigator.of(context).pushReplacementNamed(
+      _sessionsRoute,
+      arguments: {'sharedOnly': _fromSharedSessions},
+    );
+  }
+
   Future<void> _showFirstAid() async {
     final type = _incidentType;
     if (type == null || type.isEmpty) {
@@ -336,6 +361,133 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
       return;
     }
     await showFirstAidDialog(context, type);
+  }
+
+  Future<DateTime?> _showDropdownDatePicker({
+    required DateTime initialDate,
+    required int minYear,
+    required int maxYear,
+  }) async {
+    int selectedYear = initialDate.year.clamp(minYear, maxYear);
+    int selectedMonth = initialDate.month;
+    int selectedDay = initialDate.day;
+
+    void clampDay() {
+      final daysInMonth = DateUtils.getDaysInMonth(selectedYear, selectedMonth);
+      if (selectedDay > daysInMonth) {
+        selectedDay = daysInMonth;
+      }
+    }
+
+    clampDay();
+
+    return showDialog<DateTime>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: const Text('Select Date'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButton<int>(
+                          isExpanded: true,
+                          value: selectedMonth,
+                          items: const [
+                            DropdownMenuItem(value: 1, child: Text('Jan')),
+                            DropdownMenuItem(value: 2, child: Text('Feb')),
+                            DropdownMenuItem(value: 3, child: Text('Mar')),
+                            DropdownMenuItem(value: 4, child: Text('Apr')),
+                            DropdownMenuItem(value: 5, child: Text('May')),
+                            DropdownMenuItem(value: 6, child: Text('Jun')),
+                            DropdownMenuItem(value: 7, child: Text('Jul')),
+                            DropdownMenuItem(value: 8, child: Text('Aug')),
+                            DropdownMenuItem(value: 9, child: Text('Sep')),
+                            DropdownMenuItem(value: 10, child: Text('Oct')),
+                            DropdownMenuItem(value: 11, child: Text('Nov')),
+                            DropdownMenuItem(value: 12, child: Text('Dec')),
+                          ],
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setStateDialog(() {
+                              selectedMonth = value;
+                              clampDay();
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButton<int>(
+                          isExpanded: true,
+                          value: selectedDay,
+                          items: List.generate(
+                            DateUtils.getDaysInMonth(
+                              selectedYear,
+                              selectedMonth,
+                            ),
+                            (index) => DropdownMenuItem(
+                              value: index + 1,
+                              child: Text('${index + 1}'),
+                            ),
+                          ),
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setStateDialog(() {
+                              selectedDay = value;
+                              clampDay();
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButton<int>(
+                          isExpanded: true,
+                          value: selectedYear,
+                          items: List.generate(
+                            (maxYear - minYear) + 1,
+                            (index) => DropdownMenuItem(
+                              value: minYear + index,
+                              child: Text('${minYear + index}'),
+                            ),
+                          ),
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setStateDialog(() {
+                              selectedYear = value;
+                              clampDay();
+                            });
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(
+                      dialogContext,
+                    ).pop(DateTime(selectedYear, selectedMonth, selectedDay));
+                  },
+                  child: const Text('Done'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _showPatientSummary() async {
@@ -401,10 +553,8 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
 
     return SidebarLayout(
       title: _isEditing ? 'Edit Patient Information' : 'Start New Session',
-      sessionNavLabel: _isEditing
-          ? 'Edit Patient Information'
-          : 'Start New Session',
-      activeDestination: SidebarDestination.newSession,
+      sessionNavLabel: _isEditing ? null : 'Start New Session',
+      activeDestination: _activeDestination,
       onNavigateAway: _confirmLeave,
       onLogout: () async {
         await Supabase.instance.client.auth.signOut();
@@ -629,43 +779,19 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                                 ),
                                 const SizedBox(height: 24),
                                 if (_isEditing)
-                                  ElevatedButton(
-                                    onPressed: _isSaving
-                                        ? null
-                                        : _saveAndContinue,
-                                    style: FormStyles.primaryElevatedButton(
-                                      context,
-                                    ),
-                                    child: _isSaving
-                                        ? const SizedBox(
-                                            height: 20,
-                                            width: 20,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                            ),
-                                          )
-                                        : const Text(
-                                            'Save Patient Information',
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                  )
-                                else
                                   Row(
                                     children: [
                                       Expanded(
                                         child: OutlinedButton.icon(
                                           onPressed: _isSaving
                                               ? null
-                                              : _goBackToIncident,
+                                              : _discardEdits,
                                           style:
                                               FormStyles.primaryOutlinedButton(
                                             context,
                                           ),
-                                          icon: const Icon(Icons.arrow_back),
-                                          label: const Text('Incident Info'),
+                                          icon: const Icon(Icons.close_rounded),
+                                          label: const Text('Discard Changes'),
                                         ),
                                       ),
                                       const SizedBox(width: 16),
@@ -678,6 +804,52 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                                               FormStyles.primaryElevatedButton(
                                             context,
                                           ),
+                                          child: _isSaving
+                                              ? const SizedBox(
+                                                  height: 20,
+                                                  width: 20,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                    strokeWidth: 2,
+                                                  ),
+                                                )
+                                              : const Text(
+                                                  'Save Patient Information',
+                                                  style: TextStyle(
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                else
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: OutlinedButton.icon(
+                                          onPressed: _isSaving
+                                              ? null
+                                              : _goBackToIncident,
+                                          style:
+                                              FormStyles.primaryOutlinedButton(
+                                                context,
+                                              ),
+                                          icon: const Icon(Icons.arrow_back),
+                                          label: const Text('Incident Info'),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        child: ElevatedButton(
+                                          onPressed: _isSaving
+                                              ? null
+                                              : _saveAndContinue,
+                                          style:
+                                              FormStyles.primaryElevatedButton(
+                                                context,
+                                              ),
                                           child: _isSaving
                                               ? const SizedBox(
                                                   height: 20,
@@ -719,9 +891,7 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                                         style:
                                             FormStyles.firstAidOutlinedButton(),
                                         icon: const Icon(Icons.receipt_long),
-                                        label: const Text(
-                                          'Summary',
-                                        ),
+                                        label: const Text('Summary'),
                                       ),
                                     ),
                                     const SizedBox(width: 16),

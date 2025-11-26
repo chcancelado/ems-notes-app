@@ -85,6 +85,13 @@ class _ReportPageState extends State<ReportPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Notes updated for this session.')),
     );
+    final destination =
+        session.sharedWithMe ? '/sessions/shared' : '/sessions';
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      destination,
+      (route) => route.isFirst,
+      arguments: session.sharedWithMe ? {'sharedOnly': true} : null,
+    );
   }
 
   @override

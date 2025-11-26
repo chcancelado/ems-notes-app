@@ -4,8 +4,10 @@ import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
 import '../../services/session_service.dart';
 import '../../services/supabase_session_repository.dart';
 import '../../services/agency_service.dart';
+import '../../widgets/first_aid_dialog.dart';
 import '../../widgets/patient_summary_dialog.dart';
 import '../../widgets/sidebar_layout.dart';
+import '../../widgets/form_styles.dart';
 
 class SessionsPage extends StatefulWidget {
   const SessionsPage({super.key, this.showSharedOnly = false});
@@ -112,7 +114,11 @@ class _SessionsPageState extends State<SessionsPage> {
     if (!mounted) return;
     await Navigator.of(context).pushNamed(
       '/sessions/new',
-      arguments: {'sessionId': session.id, 'isEditing': true},
+      arguments: {
+        'sessionId': session.id,
+        'isEditing': true,
+        'fromSharedSessions': _showSharedOnly,
+      },
     );
   }
 
@@ -120,7 +126,11 @@ class _SessionsPageState extends State<SessionsPage> {
     if (!mounted) return;
     await Navigator.of(context).pushNamed(
       '/patient-info',
-      arguments: {'sessionId': session.id, 'isEditing': true},
+      arguments: {
+        'sessionId': session.id,
+        'isEditing': true,
+        'fromSharedSessions': _showSharedOnly,
+      },
     );
   }
 
@@ -128,7 +138,11 @@ class _SessionsPageState extends State<SessionsPage> {
     if (!mounted) return;
     await Navigator.of(context).pushNamed(
       '/vitals',
-      arguments: {'sessionId': session.id, 'isEditing': true},
+      arguments: {
+        'sessionId': session.id,
+        'isEditing': true,
+        'fromSharedSessions': _showSharedOnly,
+      },
     );
   }
 
@@ -179,13 +193,13 @@ class _SessionsPageState extends State<SessionsPage> {
                   leading: const Icon(Icons.person_add_alt),
                   title: Text(
                     isAlreadyShared
-                        ? '$displayName (already shared)'
+                        ? displayName
                         : displayName,
                     style: isAlreadyShared
                         ? TextStyle(color: Colors.grey.shade600)
                         : null,
                   ),
-                  subtitle: isAlreadyShared ? Text(member.email) : null,
+                  subtitle: isAlreadyShared ? const Text('(already shared)') : null,
                   enabled: !isAlreadyShared,
                   onTap: isAlreadyShared
                       ? null
@@ -270,20 +284,19 @@ class _SessionsPageState extends State<SessionsPage> {
                               ].whereType<String>().toList();
                               final baseName = names.isEmpty
                                   ? member.email
-                                  : names.join(' ');
-                              final meLabel = member.userId == _currentUserId
-                                  ? ' (me)'
-                                  : '';
-                              final display = '$baseName$meLabel';
-                              return ListTile(
-                                dense: true,
-                                leading: const Icon(Icons.person),
-                                title: Text(display),
-                                subtitle: Text(member.email),
-                              );
-                            },
-                          ),
-                        ),
+                              : names.join(' ');
+                          final meLabel = member.userId == _currentUserId
+                              ? ' (me)'
+                              : '';
+                          final display = '$baseName$meLabel';
+                          return ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.person),
+                            title: Text(display),
+                          );
+                        },
+                      ),
+                    ),
                       ],
                     ),
             ),
@@ -302,6 +315,20 @@ class _SessionsPageState extends State<SessionsPage> {
         context,
       ).showSnackBar(SnackBar(content: Text('Failed to load shares: $error')));
     }
+  }
+
+  Future<void> _showFirstAid(Session session) async {
+    final incidentType = (session.incidentInfo['type'] as String?) ?? '';
+    if (incidentType.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Select an incident type before viewing first aid.'),
+        ),
+      );
+      return;
+    }
+    await showFirstAidDialog(context, incidentType);
   }
 
   Future<void> _showSummary(Session session) async {
@@ -542,9 +569,7 @@ class _SessionsPageState extends State<SessionsPage> {
                           session.sharedWithMe &&
                           (_currentUserId != null &&
                               session.ownerId != _currentUserId);
-                      final addressLine = isShared
-                          ? '$displayAddress (shared with me)'
-                          : displayAddress;
+                      final addressLine = isShared ? displayAddress : displayAddress;
                       final displayName = session.patientName.isNotEmpty
                           ? session.patientName
                           : 'No Patient Name Entered';
@@ -604,15 +629,48 @@ class _SessionsPageState extends State<SessionsPage> {
                               const SizedBox(width: 8),
                               SizedBox(
                                 height: 44,
-                                child: OutlinedButton.icon(
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 10,
+                                child: ElevatedButton.icon(
+                                  style: FormStyles.firstAidElevatedButton()
+                                      .copyWith(
+                                    minimumSize: const MaterialStatePropertyAll(
+                                      Size(0, 44),
                                     ),
-                                    minimumSize: const Size(0, 44),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
+                                    padding: const MaterialStatePropertyAll(
+                                      EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 10,
+                                      ),
+                                    ),
+                                  ),
+                                  onPressed: isDeleting
+                                      ? null
+                                      : () => _showFirstAid(session),
+                                  icon: const Icon(
+                                    Icons.health_and_safety,
+                                    size: 20,
+                                  ),
+                                  label: const Text(
+                                    'First Aid',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                height: 44,
+                                child: OutlinedButton.icon(
+                                  style: FormStyles.firstAidOutlinedButton()
+                                      .copyWith(
+                                    minimumSize: const MaterialStatePropertyAll(
+                                      Size(0, 44),
+                                    ),
+                                    padding: const MaterialStatePropertyAll(
+                                      EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 10,
+                                      ),
                                     ),
                                   ),
                                   onPressed: isDeleting
@@ -635,10 +693,15 @@ class _SessionsPageState extends State<SessionsPage> {
                                       vertical: 10,
                                     ),
                                     minimumSize: const Size(0, 44),
-                                    backgroundColor: theme.colorScheme.primary,
-                                    foregroundColor: Colors.white,
+                                    backgroundColor:
+                                        theme.colorScheme.surface,
+                                    foregroundColor:
+                                        theme.colorScheme.onSurface,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12),
+                                      side: BorderSide(
+                                        color: Colors.grey.shade300,
+                                      ),
                                     ),
                                   ),
                                   onPressed: isDeleting

@@ -14,6 +14,7 @@ class AgencyPage extends StatefulWidget {
 class _AgencyPageState extends State<AgencyPage> {
   final _repository = AgencyService();
   late Future<List<AgencyMember>> _membersFuture;
+  late Future<AccountSummary> _accountSummaryFuture;
   String? _currentUserId;
 
   @override
@@ -21,6 +22,7 @@ class _AgencyPageState extends State<AgencyPage> {
     super.initState();
     _currentUserId = Supabase.instance.client.auth.currentUser?.id;
     _membersFuture = _repository.fetchMembers();
+    _accountSummaryFuture = _repository.fetchAccountSummary();
   }
 
   String _formatDate(DateTime date) {
@@ -46,6 +48,7 @@ class _AgencyPageState extends State<AgencyPage> {
   @override
   Widget build(BuildContext context) {
     final navigator = Navigator.of(context);
+    final theme = Theme.of(context);
     return SidebarLayout(
       title: 'My Agency',
       activeDestination: SidebarDestination.agency,
@@ -64,13 +67,30 @@ class _AgencyPageState extends State<AgencyPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                FutureBuilder<AccountSummary>(
+                  future: _accountSummaryFuture,
+                  builder: (context, snapshot) {
+                    final agencyName = snapshot.data?.agencyName;
+                    final displayName = (agencyName != null &&
+                            agencyName.trim().isNotEmpty)
+                        ? agencyName
+                        : 'My Agency';
+                    return Text(
+                      displayName,
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 8),
                 Text(
-                  'Agency Members',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
+                  'Members',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 FutureBuilder<List<AgencyMember>>(
                   future: _membersFuture,
                   builder: (context, snapshot) {

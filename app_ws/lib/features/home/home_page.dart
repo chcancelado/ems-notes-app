@@ -31,7 +31,7 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final navigator = Navigator.of(context);
     return SidebarLayout(
-      title: 'EMS Notes',
+      title: 'Home',
       activeDestination: SidebarDestination.home,
       onLogout: () async {
         await Supabase.instance.client.auth.signOut();

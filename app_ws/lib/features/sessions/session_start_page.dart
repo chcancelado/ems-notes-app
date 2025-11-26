@@ -29,6 +29,7 @@ class _SessionStartPageState extends State<SessionStartPage> {
   bool _initialized = false;
   bool _isSaving = false;
   bool _hasUnsavedChanges = false;
+  bool _fromSharedSessions = false;
   String _selectedIncidentType = '';
 
   static const List<String> _incidentTypes = [
@@ -74,6 +75,7 @@ class _SessionStartPageState extends State<SessionStartPage> {
     final args =
         ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
     _isEditing = args?['isEditing'] as bool? ?? false;
+    _fromSharedSessions = args?['fromSharedSessions'] as bool? ?? false;
     final sessionId = args?['sessionId'] as String?;
     if (sessionId != null) {
       _sessionId = sessionId;
@@ -109,6 +111,18 @@ class _SessionStartPageState extends State<SessionStartPage> {
     }
   }
 
+  SidebarDestination get _activeDestination {
+    if (_isEditing) {
+      return _fromSharedSessions
+          ? SidebarDestination.sharedSessions
+          : SidebarDestination.sessions;
+    }
+    return SidebarDestination.newSession;
+  }
+
+  String get _sessionsRoute =>
+      _fromSharedSessions ? '/sessions/shared' : '/sessions';
+
   @override
   void dispose() {
     _addressController.dispose();
@@ -117,11 +131,10 @@ class _SessionStartPageState extends State<SessionStartPage> {
 
   Future<void> _pickIncidentDate() async {
     final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
+    final picked = await _showDropdownDatePicker(
       initialDate: _incidentDate ?? now,
-      firstDate: DateTime(now.year - 1),
-      lastDate: DateTime(now.year + 1),
+      minYear: now.year - 1,
+      maxYear: now.year + 1,
     );
     if (picked != null) {
       setState(() {
@@ -142,6 +155,133 @@ class _SessionStartPageState extends State<SessionStartPage> {
         _hasUnsavedChanges = true;
       });
     }
+  }
+
+  Future<DateTime?> _showDropdownDatePicker({
+    required DateTime initialDate,
+    required int minYear,
+    required int maxYear,
+  }) {
+    int selectedYear = initialDate.year.clamp(minYear, maxYear);
+    int selectedMonth = initialDate.month;
+    int selectedDay = initialDate.day;
+
+    void clampDay() {
+      final daysInMonth = DateUtils.getDaysInMonth(selectedYear, selectedMonth);
+      if (selectedDay > daysInMonth) {
+        selectedDay = daysInMonth;
+      }
+    }
+
+    clampDay();
+
+    return showDialog<DateTime>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: const Text('Select Date'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButton<int>(
+                          isExpanded: true,
+                          value: selectedMonth,
+                          items: const [
+                            DropdownMenuItem(value: 1, child: Text('Jan')),
+                            DropdownMenuItem(value: 2, child: Text('Feb')),
+                            DropdownMenuItem(value: 3, child: Text('Mar')),
+                            DropdownMenuItem(value: 4, child: Text('Apr')),
+                            DropdownMenuItem(value: 5, child: Text('May')),
+                            DropdownMenuItem(value: 6, child: Text('Jun')),
+                            DropdownMenuItem(value: 7, child: Text('Jul')),
+                            DropdownMenuItem(value: 8, child: Text('Aug')),
+                            DropdownMenuItem(value: 9, child: Text('Sep')),
+                            DropdownMenuItem(value: 10, child: Text('Oct')),
+                            DropdownMenuItem(value: 11, child: Text('Nov')),
+                            DropdownMenuItem(value: 12, child: Text('Dec')),
+                          ],
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setStateDialog(() {
+                              selectedMonth = value;
+                              clampDay();
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButton<int>(
+                          isExpanded: true,
+                          value: selectedDay,
+                          items: List.generate(
+                            DateUtils.getDaysInMonth(
+                              selectedYear,
+                              selectedMonth,
+                            ),
+                            (index) => DropdownMenuItem(
+                              value: index + 1,
+                              child: Text('${index + 1}'),
+                            ),
+                          ),
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setStateDialog(() {
+                              selectedDay = value;
+                              clampDay();
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButton<int>(
+                          isExpanded: true,
+                          value: selectedYear,
+                          items: List.generate(
+                            (maxYear - minYear) + 1,
+                            (index) => DropdownMenuItem(
+                              value: minYear + index,
+                              child: Text('${minYear + index}'),
+                            ),
+                          ),
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setStateDialog(() {
+                              selectedYear = value;
+                              clampDay();
+                            });
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop(
+                      DateTime(selectedYear, selectedMonth, selectedDay),
+                    );
+                  },
+                  child: const Text('Done'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   void _handleFieldChange() {
@@ -266,9 +406,12 @@ class _SessionStartPageState extends State<SessionStartPage> {
       if (!mounted) return;
       if (_isEditing) {
         Navigator.of(context).pushReplacementNamed(
-          '/sessions',
+          _sessionsRoute,
           arguments: wasDirty
-              ? {'snackbarMessage': 'Incident information updated.'}
+              ? {
+                  'snackbarMessage': 'Incident information updated.',
+                  'sharedOnly': _fromSharedSessions,
+                }
               : null,
         );
       } else {
@@ -295,7 +438,14 @@ class _SessionStartPageState extends State<SessionStartPage> {
   Future<void> _discard() async {
     final canLeave = await _confirmLeave();
     if (!canLeave || !mounted) return;
-    Navigator.of(context).pushReplacementNamed('/home');
+    if (_isEditing) {
+      Navigator.of(context).pushReplacementNamed(
+        _sessionsRoute,
+        arguments: {'sharedOnly': _fromSharedSessions},
+      );
+    } else {
+      Navigator.of(context).pushReplacementNamed('/home');
+    }
   }
 
   @override
@@ -315,10 +465,8 @@ class _SessionStartPageState extends State<SessionStartPage> {
 
     return SidebarLayout(
       title: _isEditing ? 'Edit Incident Information' : 'Start New Session',
-      sessionNavLabel: _isEditing
-          ? 'Edit Incident Information'
-          : 'Start New Session',
-      activeDestination: SidebarDestination.newSession,
+      sessionNavLabel: _isEditing ? null : 'Start New Session',
+      activeDestination: _activeDestination,
       onNavigateAway: _confirmLeave,
       onLogout: () async {
         await Supabase.instance.client.auth.signOut();
@@ -423,24 +571,43 @@ class _SessionStartPageState extends State<SessionStartPage> {
                           ),
                           const SizedBox(height: 24),
                           if (_isEditing)
-                            ElevatedButton(
-                              onPressed: _isSaving ? null : _submit,
-                              style: FormStyles.primaryElevatedButton(context),
-                              child: _isSaving
-                                  ? const SizedBox(
-                                      height: 20,
-                                      width: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Text(
-                                      'Save Incident Information',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: _isSaving ? null : _discard,
+                                    style: FormStyles.primaryOutlinedButton(
+                                      context,
                                     ),
+                                    icon: const Icon(Icons.close_rounded),
+                                    label: const Text('Discard Changes'),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: _isSaving ? null : _submit,
+                                    style: FormStyles.primaryElevatedButton(
+                                      context,
+                                    ),
+                                    child: _isSaving
+                                        ? const SizedBox(
+                                            height: 20,
+                                            width: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Text(
+                                            'Save Incident Information',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                  ),
+                                ),
+                              ],
                             )
                           else
                             Row(
@@ -448,8 +615,9 @@ class _SessionStartPageState extends State<SessionStartPage> {
                                 Expanded(
                                   child: OutlinedButton.icon(
                                     onPressed: _isSaving ? null : _discard,
-                                    style:
-                                        FormStyles.primaryOutlinedButton(context),
+                                    style: FormStyles.primaryOutlinedButton(
+                                      context,
+                                    ),
                                     icon: const Icon(Icons.close_rounded),
                                     label: const Text('Discard'),
                                   ),
@@ -458,8 +626,9 @@ class _SessionStartPageState extends State<SessionStartPage> {
                                 Expanded(
                                   child: ElevatedButton(
                                     onPressed: _isSaving ? null : _submit,
-                                    style:
-                                        FormStyles.primaryElevatedButton(context),
+                                    style: FormStyles.primaryElevatedButton(
+                                      context,
+                                    ),
                                     child: _isSaving
                                         ? const SizedBox(
                                             height: 20,

@@ -55,8 +55,11 @@ class _SidebarLayoutState extends State<SidebarLayout> {
     try {
       final member = await AgencyService().fetchCurrentMember();
       if (mounted) {
+        final first = member?.firstName?.trim() ?? '';
+        final last = member?.lastName?.trim() ?? '';
+        final nameParts = [if (first.isNotEmpty) first, if (last.isNotEmpty) last];
         setState(() {
-          _greetingName = member?.firstName;
+          _greetingName = nameParts.isNotEmpty ? nameParts.join(' ') : member?.email;
         });
       }
     } catch (_) {
@@ -94,6 +97,30 @@ class _SidebarLayoutState extends State<SidebarLayout> {
     Navigator.of(context).pushReplacementNamed(_routeFor(destination));
   }
 
+  Future<void> _handleHelpTap() async {
+    final canLeave = await _canLeave();
+    if (!canLeave || !mounted) return;
+    if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
+      Navigator.of(context).pop();
+    }
+    Navigator.of(context).pushReplacementNamed('/help');
+  }
+
+  Widget _footerBar(BuildContext context) {
+    final color = Theme.of(context).colorScheme.surfaceVariant;
+    return Container(
+      color: color,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Center(
+        child: TextButton.icon(
+          onPressed: _handleHelpTap,
+          icon: const Icon(Icons.help_outline),
+          label: const Text('Help'),
+        ),
+      ),
+    );
+  }
+
   String _routeFor(SidebarDestination destination) {
     switch (destination) {
       case SidebarDestination.home:
@@ -128,6 +155,7 @@ class _SidebarLayoutState extends State<SidebarLayout> {
             onLogout: widget.onLogout != null ? _handleLogout : null,
             newSessionLabel: navLabel,
             greeting: _greetingName,
+            onProfileTap: () => _handleDestinationTap(SidebarDestination.account),
           );
 
           final theme = Theme.of(context);
@@ -184,18 +212,28 @@ class _SidebarLayoutState extends State<SidebarLayout> {
             appBar: appBar,
             drawer: useDrawer ? Drawer(child: SafeArea(child: sidebar)) : null,
             body: useDrawer
-                ? SafeArea(child: widget.body)
+                ? SafeArea(
+                    child: _BodyWithFooter(
+                      body: widget.body,
+                      footerBuilder: _footerBar,
+                    ),
+                  )
                 : Row(
                     children: [
                       Container(
                         width: 260,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surfaceVariant.withOpacity(0.3),
+                        color: Theme.of(context).colorScheme.surfaceVariant,
                         child: SafeArea(child: sidebar),
                       ),
                       const VerticalDivider(width: 1),
-                      Expanded(child: SafeArea(child: widget.body)),
+                      Expanded(
+                        child: SafeArea(
+                          child: _BodyWithFooter(
+                            body: widget.body,
+                            footerBuilder: _footerBar,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
             floatingActionButton: widget.floatingActionButton,
@@ -224,6 +262,7 @@ class _SidebarNavigation extends StatelessWidget {
     this.onLogout,
     required this.newSessionLabel,
     this.greeting,
+    this.onProfileTap,
   });
 
   final SidebarDestination active;
@@ -231,20 +270,11 @@ class _SidebarNavigation extends StatelessWidget {
   final Future<void> Function()? onLogout;
   final String newSessionLabel;
   final String? greeting;
+  final VoidCallback? onProfileTap;
 
   @override
   Widget build(BuildContext context) {
     final items = [
-      if (greeting != null && greeting!.isNotEmpty)
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Text(
-            'Hello, $greeting',
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-          ),
-        ),
       _NavTile(
         icon: Icons.home_outlined,
         label: 'Home',
@@ -275,12 +305,6 @@ class _SidebarNavigation extends StatelessWidget {
         selected: active == SidebarDestination.agency,
         onTap: () => onSelected(SidebarDestination.agency),
       ),
-      _NavTile(
-        icon: Icons.person,
-        label: 'My Account',
-        selected: active == SidebarDestination.account,
-        onTap: () => onSelected(SidebarDestination.account),
-      ),
     ];
 
     final List<Widget> menuItems = [
@@ -294,9 +318,76 @@ class _SidebarNavigation extends StatelessWidget {
         ),
     ];
 
-    return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 8),
-      children: menuItems,
+    final theme = Theme.of(context);
+    return Column(
+      children: [
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 8),
+            children: menuItems,
+          ),
+        ),
+        if (greeting != null && greeting!.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: onProfileTap,
+                child: Ink(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: theme.colorScheme.outline),
+                  ),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 18,
+                        backgroundColor:
+                            theme.colorScheme.primary.withOpacity(0.1),
+                        child: Icon(
+                          Icons.person_outline,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          greeting!,
+                          style: theme.textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _BodyWithFooter extends StatelessWidget {
+  const _BodyWithFooter({
+    required this.body,
+    required this.footerBuilder,
+  });
+
+  final Widget body;
+  final Widget Function(BuildContext) footerBuilder;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Expanded(child: body),
+        footerBuilder(context),
+      ],
     );
   }
 }

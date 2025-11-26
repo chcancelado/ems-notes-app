@@ -44,6 +44,7 @@ class _VitalsPageState extends State<VitalsPage> {
   bool _isHydrating = false;
   DateTime? _recordingStartedAt;
   DateTime? _recordingEndedAt;
+  bool _fromSharedSessions = false;
 
   @override
   void dispose() {
@@ -67,6 +68,7 @@ class _VitalsPageState extends State<VitalsPage> {
     final args =
         ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
     _isEditing = args?['isEditing'] as bool? ?? false;
+    _fromSharedSessions = args?['fromSharedSessions'] as bool? ?? false;
     final sessionId = args?['sessionId'] as String?;
     if (sessionId != null) {
       _sessionId = sessionId;
@@ -86,6 +88,18 @@ class _VitalsPageState extends State<VitalsPage> {
 
   List<Map<String, dynamic>> get _vitals =>
       _session?.vitals ?? const <Map<String, dynamic>>[];
+
+  SidebarDestination get _activeDestination {
+    if (_isEditing) {
+      return _fromSharedSessions
+          ? SidebarDestination.sharedSessions
+          : SidebarDestination.sessions;
+    }
+    return SidebarDestination.newSession;
+  }
+
+  String get _sessionsRoute =>
+      _fromSharedSessions ? '/sessions/shared' : '/sessions';
 
   Future<void> _loadVitalsFromSupabase(String sessionId) async {
     setState(() {
@@ -247,16 +261,23 @@ class _VitalsPageState extends State<VitalsPage> {
     final canLeave = await _confirmLeave();
     if (!canLeave || !mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil(
-      '/sessions',
+      _sessionsRoute,
       (route) => false,
-      arguments: {'snackbarMessage': 'New session saved.'},
+      arguments: {
+        'snackbarMessage': 'New session saved.',
+        'sharedOnly': _fromSharedSessions,
+      },
     );
   }
 
   void _navigateBackToPatientInfo() {
     Navigator.of(context).pushReplacementNamed(
       '/patient-info',
-      arguments: {'sessionId': _sessionId, 'isEditing': _isEditing},
+      arguments: {
+        'sessionId': _sessionId,
+        'isEditing': _isEditing,
+        'fromSharedSessions': _fromSharedSessions,
+      },
     );
   }
 
@@ -264,8 +285,9 @@ class _VitalsPageState extends State<VitalsPage> {
     final canLeave = await _confirmLeave();
     if (!canLeave || !mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil(
-      '/sessions',
+      _sessionsRoute,
       (route) => false,
+      arguments: {'sharedOnly': _fromSharedSessions},
     );
   }
 
@@ -332,8 +354,8 @@ class _VitalsPageState extends State<VitalsPage> {
     );
     return SidebarLayout(
       title: _isEditing ? 'Add Vitals' : 'Start New Session',
-      sessionNavLabel: _isEditing ? 'Edit Session' : 'Start New Session',
-      activeDestination: SidebarDestination.newSession,
+      sessionNavLabel: _isEditing ? null : 'Start New Session',
+      activeDestination: _activeDestination,
       onNavigateAway: _confirmLeave,
       onLogout: () async {
         if (!mounted) return;
