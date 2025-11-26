@@ -5,6 +5,7 @@ import '../../services/session_service.dart';
 import '../../services/supabase_session_repository.dart';
 import '../../widgets/app_input_decorations.dart';
 import '../../widgets/first_aid_dialog.dart';
+import '../../widgets/form_styles.dart';
 import '../../widgets/patient_summary_dialog.dart';
 import '../../widgets/sidebar_layout.dart';
 import '../../widgets/unsaved_changes_dialog.dart';
@@ -17,6 +18,8 @@ class PatientInfoPage extends StatefulWidget {
 }
 
 class _PatientInfoPageState extends State<PatientInfoPage> {
+  static const String _defaultPatientName = 'No Patient Name Entered';
+
   final _formKey = GlobalKey<FormState>();
 
   final TextEditingController _nameController = TextEditingController();
@@ -33,6 +36,7 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
 
   final _repository = SupabaseSessionRepository();
   String? _sessionId;
+  bool _isEditing = false;
   DateTime? _dateOfBirth;
   String _sex = 'U';
   bool _isSaving = false;
@@ -73,6 +77,7 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
 
     final args =
         ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    _isEditing = args?['isEditing'] as bool? ?? false;
     final sessionId = args?['sessionId'] as String?;
 
     if (sessionId != null) {
@@ -121,7 +126,11 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
   void _applyPatientInfo(Map<String, dynamic> patientInfo) {
     _isHydrating = true;
     setState(() {
-      _nameController.text = (patientInfo['name'] as String?) ?? '';
+      final name = patientInfo['name'] as String?;
+      _nameController.text =
+          name != null && name.isNotEmpty && name != _defaultPatientName
+          ? name
+          : '';
       final dobString = patientInfo['date_of_birth'] as String?;
       if (dobString != null) {
         final parsed = DateTime.tryParse(dobString);
@@ -244,6 +253,7 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
   }
 
   Future<void> _saveAndContinue() async {
+    if (_isSaving) return;
     if (_sessionId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -252,48 +262,34 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
       );
       return;
     }
-    if (_dateOfBirth == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a date of birth.')),
-      );
-      return;
-    }
-
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    final feetText = _heightFeetController.text.trim();
-    final inchesText = _heightInchesController.text.trim();
-    final int heightFeet = feetText.isEmpty
-        ? 0
-        : int.parse(feetText); // validated already
-    final int heightInches = inchesText.isEmpty
-        ? 0
-        : int.parse(inchesText); // validated already
-    final totalHeight = (heightFeet * 12) + heightInches;
-
-    if (totalHeight <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter the patient\'s height.')),
-      );
-      return;
-    }
-
     setState(() {
       _isSaving = true;
     });
 
-    final weight = int.tryParse(_weightController.text.trim()) ?? 0;
-
     try {
+      final feetText = _heightFeetController.text.trim();
+      final inchesText = _heightInchesController.text.trim();
+      final feet = feetText.isEmpty ? null : int.tryParse(feetText);
+      final inches = inchesText.isEmpty ? null : int.tryParse(inchesText);
+      final totalHeight =
+          ((feet ?? 0) * 12) + (inches ?? 0); // 0 when height not provided
+      final weight = int.tryParse(_weightController.text.trim());
+
+      final safeName = _nameController.text.trim().isEmpty
+          ? 'Unknown Patient'
+          : _nameController.text.trim();
+      final safeDob = _dateOfBirth ?? DateTime.now();
+      final heightInches = totalHeight > 0 ? totalHeight : 1;
+      final weightValue = (weight ?? 0) > 0 ? weight! : 1;
+
+      final wasDirty = _hasUnsavedChanges;
       final savedInfo = await _repository.upsertPatientInfo(
         sessionId: _sessionId!,
-        name: _nameController.text.trim(),
-        dateOfBirth: _dateOfBirth!,
+        name: safeName.isEmpty ? _defaultPatientName : safeName,
+        dateOfBirth: safeDob,
         sex: _sex,
-        heightInInches: totalHeight,
-        weightInPounds: weight,
+        heightInInches: heightInches,
+        weightInPounds: weightValue,
         allergies: _allergiesController.text.trim(),
         medications: _medicationsController.text.trim(),
         medicalHistory: _medicalHistoryController.text.trim(),
@@ -305,10 +301,19 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
         _hasUnsavedChanges = false;
       });
 
-      if (!mounted) return;
-      Navigator.of(
-        context,
-      ).pushReplacementNamed('/vitals', arguments: {'sessionId': _sessionId});
+      if (_isEditing) {
+        Navigator.of(context).pushReplacementNamed(
+          '/sessions',
+          arguments: wasDirty
+              ? {'snackbarMessage': 'Patient information updated.'}
+              : null,
+        );
+      } else {
+        Navigator.of(context).pushReplacementNamed(
+          '/vitals',
+          arguments: {'sessionId': _sessionId, 'isEditing': _isEditing},
+        );
+      }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -327,13 +332,9 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
   Future<void> _goBackToIncident() async {
     final canLeave = await _confirmLeave();
     if (!canLeave || !mounted) return;
-    if (_sessionId == null) {
-      Navigator.of(context).pushReplacementNamed('/sessions/new');
-      return;
-    }
     Navigator.of(context).pushReplacementNamed(
       '/sessions/new',
-      arguments: {'sessionId': _sessionId},
+      arguments: {'sessionId': _sessionId, 'isEditing': _isEditing},
     );
   }
 
@@ -413,7 +414,10 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
     final theme = Theme.of(context);
 
     return SidebarLayout(
-      title: 'Patient Information',
+      title: _isEditing ? 'Edit Patient Information' : 'Start New Session',
+      sessionNavLabel: _isEditing
+          ? 'Edit Patient Information'
+          : 'Start New Session',
       activeDestination: SidebarDestination.newSession,
       onNavigateAway: _confirmLeave,
       onLogout: () async {
@@ -426,52 +430,14 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
           : Align(
               alignment: Alignment.topCenter,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+                padding: FormStyles.pagePadding,
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 720),
+                  constraints: const BoxConstraints(
+                    maxWidth: FormStyles.maxContentWidth,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: _showPatientSummary,
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: firstAidAccentColor,
-                                backgroundColor: Colors.white,
-                                side: const BorderSide(
-                                  color: firstAidAccentColor,
-                                  width: 2,
-                                ),
-                                minimumSize: const Size.fromHeight(48),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              icon: const Icon(Icons.receipt_long),
-                              label: const Text('Show Patient Summary'),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () => _showFirstAid(),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: firstAidAccentColor,
-                                foregroundColor: Colors.white,
-                                minimumSize: const Size.fromHeight(48),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              icon: const Icon(Icons.health_and_safety),
-                              label: const Text('Show First Aid'),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
                       Expanded(
                         child: Form(
                           key: _formKey,
@@ -479,10 +445,12 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                Text(
-                                  'Patient Details',
-                                  style: theme.textTheme.headlineSmall
-                                      ?.copyWith(fontWeight: FontWeight.bold),
+                                Center(
+                                  child: Text(
+                                    'Patient Information',
+                                    style: theme.textTheme.headlineSmall
+                                        ?.copyWith(fontWeight: FontWeight.bold),
+                                  ),
                                 ),
                                 const SizedBox(height: 16),
                                 TextFormField(
@@ -493,13 +461,6 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                                   ),
                                   style: AppInputDecorations.fieldTextStyle,
                                   onChanged: (_) => _handleFieldChange(),
-                                  validator: (value) {
-                                    if (value == null || value.trim().isEmpty) {
-                                      return 'Please enter the patient'
-                                          's name';
-                                    }
-                                    return null;
-                                  },
                                 ),
                                 const SizedBox(height: 16),
                                 GestureDetector(
@@ -517,12 +478,6 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                                           ),
                                       style: AppInputDecorations.fieldTextStyle,
                                       onChanged: (_) => _handleFieldChange(),
-                                      validator: (value) {
-                                        if (value == null || value.isEmpty) {
-                                          return 'Select the date of birth';
-                                        }
-                                        return null;
-                                      },
                                     ),
                                   ),
                                 ),
@@ -598,7 +553,6 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                                                   TextInputType.number,
                                               onChanged: (_) =>
                                                   _handleFieldChange(),
-                                              validator: _validateHeightFeet,
                                             ),
                                           ),
                                           const SizedBox(width: 12),
@@ -617,7 +571,6 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                                                   TextInputType.number,
                                               onChanged: (_) =>
                                                   _handleFieldChange(),
-                                              validator: _validateHeightInches,
                                             ),
                                           ),
                                         ],
@@ -636,17 +589,6 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                                             AppInputDecorations.fieldTextStyle,
                                         keyboardType: TextInputType.number,
                                         onChanged: (_) => _handleFieldChange(),
-                                        validator: (value) {
-                                          if (value == null ||
-                                              value.trim().isEmpty) {
-                                            return 'Enter weight';
-                                          }
-                                          final parsed = int.tryParse(value);
-                                          if (parsed == null || parsed <= 0) {
-                                            return 'Enter a positive number';
-                                          }
-                                          return null;
-                                        },
                                       ),
                                     ),
                                   ],
@@ -698,80 +640,123 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                                   style: AppInputDecorations.fieldTextStyle,
                                   maxLines: 3,
                                   onChanged: (_) => _handleFieldChange(),
-                                  validator: (value) {
-                                    if (value == null || value.trim().isEmpty) {
-                                      return 'Enter the chief complaint';
-                                    }
-                                    return null;
-                                  },
                                 ),
                                 const SizedBox(height: 24),
+                                if (_isEditing)
+                                  ElevatedButton(
+                                    onPressed: _isSaving
+                                        ? null
+                                        : _saveAndContinue,
+                                    style: FormStyles.primaryElevatedButton(
+                                      context,
+                                    ),
+                                    child: _isSaving
+                                        ? const SizedBox(
+                                            height: 20,
+                                            width: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Text(
+                                            'Save Patient Information',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                  )
+                                else
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: OutlinedButton.icon(
+                                          onPressed: _isSaving
+                                              ? null
+                                              : _goBackToIncident,
+                                          style:
+                                              FormStyles.primaryOutlinedButton(
+                                            context,
+                                          ),
+                                          icon: const Icon(Icons.arrow_back),
+                                          label: const Text('Incident Info'),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        child: ElevatedButton(
+                                          onPressed: _isSaving
+                                              ? null
+                                              : _saveAndContinue,
+                                          style:
+                                              FormStyles.primaryElevatedButton(
+                                            context,
+                                          ),
+                                          child: _isSaving
+                                              ? const SizedBox(
+                                                  height: 20,
+                                                  width: 20,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                      ),
+                                                )
+                                              : const Row(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.center,
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    Text(
+                                                      'Vitals',
+                                                      style: TextStyle(
+                                                        color: Colors.white,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                      ),
+                                                    ),
+                                                    SizedBox(width: 8),
+                                                    Icon(Icons.arrow_forward),
+                                                  ],
+                                                ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                const SizedBox(height: 8),
+                                const SizedBox(height: 16),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        onPressed: _showPatientSummary,
+                                        style:
+                                            FormStyles.firstAidOutlinedButton(),
+                                        icon: const Icon(Icons.receipt_long),
+                                        label: const Text(
+                                          'Summary',
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        onPressed: () => _showFirstAid(),
+                                        style:
+                                            FormStyles.firstAidElevatedButton(),
+                                        icon: const Icon(
+                                          Icons.health_and_safety,
+                                        ),
+                                        label: const Text('First Aid'),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
                               ],
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: _isSaving ? null : _goBackToIncident,
-                              style: OutlinedButton.styleFrom(
-                                minimumSize: const Size.fromHeight(48),
-                                side: BorderSide(
-                                  color: theme.colorScheme.primary,
-                                  width: 2,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              icon: const Icon(Icons.arrow_back),
-                              label: const Text('Back to Incident Information'),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: _isSaving ? null : _saveAndContinue,
-                              style: ElevatedButton.styleFrom(
-                                minimumSize: const Size.fromHeight(48),
-                                backgroundColor: Theme.of(
-                                  context,
-                                ).colorScheme.primary,
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              child: _isSaving
-                                  ? const SizedBox(
-                                      height: 20,
-                                      width: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Text(
-                                          'Continue to Vitals',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        const Icon(Icons.arrow_forward),
-                                      ],
-                                    ),
-                            ),
-                          ),
-                        ],
                       ),
                     ],
                   ),

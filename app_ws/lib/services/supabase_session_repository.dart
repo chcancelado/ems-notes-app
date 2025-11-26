@@ -4,7 +4,7 @@ import 'session_service.dart';
 
 class SupabaseSessionRepository {
   SupabaseSessionRepository({SupabaseClient? client})
-      : _client = client ?? Supabase.instance.client;
+    : _client = client ?? Supabase.instance.client;
 
   final SupabaseClient _client;
 
@@ -69,9 +69,10 @@ class SupabaseSessionRepository {
   Session _mapSessionRow(Map<String, dynamic> row) {
     final session = Session(
       id: row['id'] as String,
-      patientName: (row['session_patient_info']?['patient_name'] as String?) ??
-          '',
-      startedAt: DateTime.tryParse(row['created_at'] as String? ?? '') ??
+      patientName:
+          (row['session_patient_info']?['patient_name'] as String?) ?? '',
+      startedAt:
+          DateTime.tryParse(row['created_at'] as String? ?? '') ??
           DateTime.now(),
     );
     session.setIncidentInfo(_buildIncidentInfo(row));
@@ -168,28 +169,34 @@ class SupabaseSessionRepository {
 
   Future<Map<String, dynamic>> upsertPatientInfo({
     required String sessionId,
-    required String name,
-    required DateTime dateOfBirth,
-    required String sex,
-    required int heightInInches,
-    required int weightInPounds,
-    required String allergies,
-    required String medications,
-    required String medicalHistory,
-    required String chiefComplaint,
+    String? name,
+    DateTime? dateOfBirth,
+    String sex = 'U',
+    int? heightInInches,
+    int? weightInPounds,
+    String? allergies,
+    String? medications,
+    String? medicalHistory,
+    String? chiefComplaint,
   }) async {
     _requireUser();
+    final fallbackDate = dateOfBirth ?? DateTime.now();
+    final safeHeight = (heightInInches ?? 1) > 0 ? (heightInInches ?? 1) : 1;
+    final safeWeight = (weightInPounds ?? 1) > 0 ? (weightInPounds ?? 1) : 1;
     final payload = {
       'session_id': sessionId,
-      'patient_name': name,
-      'date_of_birth': _formatDate(dateOfBirth),
-      'sex': sex,
-      'height_in_inches': heightInInches,
-      'weight_in_pounds': weightInPounds,
-      'allergies': allergies.isEmpty ? null : allergies,
-      'medications': medications.isEmpty ? null : medications,
-      'medical_history': medicalHistory,
-      'chief_complaint': chiefComplaint,
+      'patient_name':
+          (name ?? '').isEmpty ? 'No Patient Name Entered' : name,
+      'date_of_birth': _formatDate(fallbackDate),
+      'sex': (sex.isEmpty ? 'U' : sex),
+      'height_in_inches': safeHeight,
+      'weight_in_pounds': safeWeight,
+      'allergies': (allergies ?? '').isEmpty ? null : allergies,
+      'medications': (medications ?? '').isEmpty ? null : medications,
+      'medical_history': medicalHistory ?? '',
+      'chief_complaint': (chiefComplaint ?? '').isEmpty
+          ? 'Unknown'
+          : chiefComplaint,
     };
 
     final row = await _client
@@ -255,6 +262,11 @@ class SupabaseSessionRepository {
     return _buildVitals(Map<String, dynamic>.from(row));
   }
 
+  Future<void> deleteSession(String sessionId) async {
+    _requireUser();
+    await _client.from('sessions').delete().eq('id', sessionId);
+  }
+
   Future<List<Session>> fetchSessions() async {
     final user = _requireUser();
 
@@ -280,7 +292,7 @@ class SupabaseSessionRepository {
           )
         ''')
         .eq('user_id', user.id)
-        .order('incident_date', ascending: false);
+        .order('created_at', ascending: false);
 
     return (rows as List<dynamic>)
         .whereType<Map<String, dynamic>>()
@@ -333,5 +345,4 @@ class SupabaseSessionRepository {
 
     return _mapSessionRow(Map<String, dynamic>.from(row));
   }
-
 }

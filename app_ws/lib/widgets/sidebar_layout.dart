@@ -14,6 +14,7 @@ class SidebarLayout extends StatefulWidget {
     this.onNavigateAway,
     this.onBackRequested,
     this.onLogout,
+    this.sessionNavLabel,
   });
 
   final String title;
@@ -25,6 +26,7 @@ class SidebarLayout extends StatefulWidget {
   final Future<bool> Function()? onNavigateAway;
   final Future<bool> Function()? onBackRequested;
   final Future<void> Function()? onLogout;
+  final String? sessionNavLabel;
 
   @override
   State<SidebarLayout> createState() => _SidebarLayoutState();
@@ -84,10 +86,12 @@ class _SidebarLayoutState extends State<SidebarLayout> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final bool useDrawer = constraints.maxWidth < 900;
+          final navLabel = widget.sessionNavLabel ?? 'Start New Session';
           final sidebar = _SidebarNavigation(
             active: widget.activeDestination,
             onSelected: _handleDestinationTap,
             onLogout: widget.onLogout != null ? _handleLogout : null,
+            newSessionLabel: navLabel,
           );
 
           final theme = Theme.of(context);
@@ -107,6 +111,7 @@ class _SidebarLayoutState extends State<SidebarLayout> {
           final appBar = AppBar(
             toolbarHeight: 88,
             centerTitle: true,
+            automaticallyImplyLeading: false,
             title: Text(
               widget.title,
               style: theme.textTheme.headlineSmall?.copyWith(
@@ -196,11 +201,13 @@ class _SidebarNavigation extends StatelessWidget {
     required this.active,
     required this.onSelected,
     this.onLogout,
+    required this.newSessionLabel,
   });
 
   final SidebarDestination active;
   final ValueChanged<SidebarDestination> onSelected;
   final Future<void> Function()? onLogout;
+  final String newSessionLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -213,7 +220,7 @@ class _SidebarNavigation extends StatelessWidget {
       ),
       _NavTile(
         icon: Icons.add_circle_outline,
-        label: 'Start New Session',
+        label: newSessionLabel,
         selected: active == SidebarDestination.newSession,
         onTap: () => onSelected(SidebarDestination.newSession),
       ),

@@ -5,6 +5,8 @@ import '../../services/session_service.dart';
 import '../../services/supabase_session_repository.dart';
 import '../../widgets/app_input_decorations.dart';
 import '../../widgets/first_aid_dialog.dart';
+import '../../widgets/form_styles.dart';
+import '../../widgets/patient_summary_dialog.dart';
 import '../../widgets/sidebar_layout.dart';
 import '../../widgets/unsaved_changes_dialog.dart';
 
@@ -35,6 +37,7 @@ class _VitalsPageState extends State<VitalsPage> {
   final _repository = SupabaseSessionRepository();
 
   String? _sessionId;
+  bool _isEditing = false;
   bool _initialized = false;
   bool _isLoading = false;
   bool _hasUnsavedChanges = false;
@@ -63,6 +66,7 @@ class _VitalsPageState extends State<VitalsPage> {
 
     final args =
         ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    _isEditing = args?['isEditing'] as bool? ?? false;
     final sessionId = args?['sessionId'] as String?;
     if (sessionId != null) {
       _sessionId = sessionId;
@@ -163,7 +167,9 @@ class _VitalsPageState extends State<VitalsPage> {
   Future<void> _addVitals() async {
     if (_sessionId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No active session. Start a session first.')),
+        const SnackBar(
+          content: Text('No active session. Start a session first.'),
+        ),
       );
       return;
     }
@@ -193,7 +199,9 @@ class _VitalsPageState extends State<VitalsPage> {
 
     if (!hasAnyValue) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter at least one vital before saving.')),
+        const SnackBar(
+          content: Text('Enter at least one vital before saving.'),
+        ),
       );
       return;
     }
@@ -228,33 +236,44 @@ class _VitalsPageState extends State<VitalsPage> {
       _resetForm();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to add vitals: $error')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to add vitals: $error')));
       }
     }
-  }
-
-  Future<void> _goBackToPatientInfo() async {
-    final canLeave = await _confirmLeave();
-    if (!canLeave || !mounted) return;
-    if (_sessionId == null) {
-      Navigator.of(context).pushReplacementNamed('/patient-info');
-      return;
-    }
-    Navigator.of(context).pushReplacementNamed(
-      '/patient-info',
-      arguments: {'sessionId': _sessionId},
-    );
   }
 
   Future<void> _finishSession() async {
     final canLeave = await _confirmLeave();
     if (!canLeave || !mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil(
-      '/home',
-      (route) => route.settings.name == '/home',
+      '/sessions',
+      (route) => false,
+      arguments: {'snackbarMessage': 'New session saved.'},
     );
+  }
+
+  void _navigateBackToPatientInfo() {
+    Navigator.of(context).pushReplacementNamed(
+      '/patient-info',
+      arguments: {'sessionId': _sessionId, 'isEditing': _isEditing},
+    );
+  }
+
+  Future<void> _discardEdits() async {
+    final canLeave = await _confirmLeave();
+    if (!canLeave || !mounted) return;
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      '/sessions',
+      (route) => false,
+    );
+  }
+
+  Future<void> _showPatientSummary() async {
+    final session = _sessionId == null
+        ? sessionService.latestSession
+        : sessionService.findSessionById(_sessionId!);
+    await showPatientSummaryDialog(context, session: session);
   }
 
   Future<void> _showFirstAid() async {
@@ -263,7 +282,9 @@ class _VitalsPageState extends State<VitalsPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Incident type not available. Return to Incident Information to set it.'),
+          content: Text(
+            'Incident type not available. Return to Incident Information to set it.',
+          ),
         ),
       );
       return;
@@ -275,8 +296,10 @@ class _VitalsPageState extends State<VitalsPage> {
     if (value == null || value.isEmpty) return '';
     final parsed = DateTime.tryParse(value);
     if (parsed == null) return value;
-    final time =
-        TimeOfDay(hour: parsed.hour, minute: parsed.minute).format(context);
+    final time = TimeOfDay(
+      hour: parsed.hour,
+      minute: parsed.minute,
+    ).format(context);
     return '${parsed.month}/${parsed.day}/${parsed.year} at $time';
   }
 
@@ -292,8 +315,7 @@ class _VitalsPageState extends State<VitalsPage> {
     if (start == null) {
       return '--';
     }
-    final startText =
-        TimeOfDay.fromDateTime(start.toLocal()).format(context);
+    final startText = TimeOfDay.fromDateTime(start.toLocal()).format(context);
     final endText = end == null
         ? '--'
         : TimeOfDay.fromDateTime(end.toLocal()).format(context);
@@ -305,11 +327,12 @@ class _VitalsPageState extends State<VitalsPage> {
     final session = _session;
     final theme = Theme.of(context);
     final slashStyle = theme.textTheme.titleMedium?.copyWith(
-          fontWeight: FontWeight.w600,
-          color: Colors.grey.shade600,
-        );
+      fontWeight: FontWeight.w600,
+      color: Colors.grey.shade600,
+    );
     return SidebarLayout(
-      title: 'Vitals',
+      title: _isEditing ? 'Add Vitals' : 'Start New Session',
+      sessionNavLabel: _isEditing ? 'Edit Session' : 'Start New Session',
       activeDestination: SidebarDestination.newSession,
       onNavigateAway: _confirmLeave,
       onLogout: () async {
@@ -327,354 +350,349 @@ class _VitalsPageState extends State<VitalsPage> {
               ),
             )
           : _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : Align(
-                  alignment: Alignment.topCenter,
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 720),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (session.patientName.isNotEmpty)
-                            Text(
-                              'Patient: ${session.patientName}',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.bold),
-                            ),
-                          const SizedBox(height: 16),
-                          Form(
-                            key: _formKey,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
+          ? const Center(child: CircularProgressIndicator())
+          : Align(
+              alignment: Alignment.topCenter,
+              child: SingleChildScrollView(
+                padding: FormStyles.pagePadding,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: FormStyles.maxContentWidth,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Text(
+                          'Vitals',
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
                               children: [
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: ElevatedButton.icon(
-                                    onPressed: () => _showFirstAid(),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: firstAidAccentColor,
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 12,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                    ),
-                                    icon: const Icon(Icons.health_and_safety),
-                                    label: const Text('Show First Aid'),
+                                Expanded(
+                                  child: _numberField(
+                                    controller: _pulseController,
+                                    label: 'Pulse Rate',
+                                    hint: '-',
                                   ),
                                 ),
-                                const SizedBox(height: 16),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _numberField(
-                                        controller: _pulseController,
-                                        label: 'Pulse Rate',
-                                        hint: '-',
-                                      ),
-                                    ),
-                                    const SizedBox(width: 16),
-                                    Expanded(
-                                      child: _numberField(
-                                        controller: _breathingController,
-                                        label: 'Breathing Rate',
-                                        hint: '-',
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _numberField(
-                                        controller: _systolicController,
-                                        label: 'BP Systolic',
-                                        hint: '-',
-                                      ),
-                                    ),
-                                    Container(
-                                      margin: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                      ),
-                                      height: 56,
-                                      alignment: Alignment.center,
-                                      child: Text(
-                                        '/',
-                                        style: slashStyle,
-                                      ),
-                                    ),
-                                    Expanded(
-                                      child: _numberField(
-                                        controller: _diastolicController,
-                                        label: 'BP Diastolic',
-                                        hint: '-',
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _numberField(
-                                        controller: _spo2Controller,
-                                        label: 'SpO2',
-                                        hint: '-',
-                                      ),
-                                    ),
-                                    const SizedBox(width: 16),
-                                    Expanded(
-                                      child: _numberField(
-                                        controller: _glucoseController,
-                                        label: 'Blood Glucose',
-                                        hint: '-',
-                                      ),
-                                    ),
-                                    const SizedBox(width: 16),
-                                    Expanded(
-                                      child: _numberField(
-                                        controller: _temperatureController,
-                                        label: 'Temperature',
-                                        hint: '-',
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-                                TextFormField(
-                                  controller: _notesController,
-                                  decoration: AppInputDecorations.filledField(
-                                    context,
-                                    label: 'Notes',
-                                  ),
-                                  style: AppInputDecorations.fieldTextStyle,
-                                  maxLines: 3,
-                                  onChanged: (_) => _handleFieldChange(),
-                                ),
-                                const SizedBox(height: 16),
-                                Center(
-                                  child: ElevatedButton.icon(
-                                    onPressed: _addVitals,
-                                    style: ElevatedButton.styleFrom(
-                                      minimumSize: const Size(0, 44),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 20,
-                                        vertical: 12,
-                                      ),
-                                      backgroundColor:
-                                          Theme.of(context).colorScheme.primary,
-                                      foregroundColor: Colors.white,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                    ),
-                                    icon: const Icon(Icons.add),
-                                    label: const Text('Add Vitals Entry'),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: _numberField(
+                                    controller: _breathingController,
+                                    label: 'Breathing Rate',
+                                    hint: '-',
                                   ),
                                 ),
                               ],
                             ),
-                          ),
-                          const SizedBox(height: 24),
-                          Text(
-                            'Recorded Vitals',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 8),
-                          if (_vitals.isEmpty)
-                            const Text('No vitals recorded yet.')
-                          else
-                            ListView.builder(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              itemCount: _vitals.length,
-                              itemBuilder: (context, index) {
-                                final entry = _vitals[index];
-                                final pulseRaw = entry['pulse_rate'] as int?;
-                                final breathingRaw =
-                                    entry['breathing_rate'] as int?;
-                                final systolicRaw =
-                                    entry['blood_pressure_systolic'] as int?;
-                                final diastolicRaw =
-                                    entry['blood_pressure_diastolic'] as int?;
-                                final pulse = (pulseRaw == null ||
-                                        pulseRaw == _defaultPulseRate)
-                                    ? null
-                                    : pulseRaw;
-                                final breathing = (breathingRaw == null ||
-                                        breathingRaw == _defaultBreathingRate)
-                                    ? null
-                                    : breathingRaw;
-                                final systolic = (systolicRaw == null ||
-                                        systolicRaw == _defaultSystolic)
-                                    ? null
-                                    : systolicRaw;
-                                final diastolic = (diastolicRaw == null ||
-                                        diastolicRaw == _defaultDiastolic)
-                                    ? null
-                                    : diastolicRaw;
-                                final titleParts = <String>[];
-                                if (pulse != null) {
-                                  titleParts.add('Pulse ${pulse} bpm');
-                                }
-                                if (breathing != null) {
-                                  titleParts.add('Resp ${breathing} bpm');
-                                }
-                                if (systolic != null || diastolic != null) {
-                                  final systolicText =
-                                      systolic?.toString() ?? '--';
-                                  final diastolicText =
-                                      diastolic?.toString() ?? '--';
-                                  titleParts
-                                      .add('BP $systolicText/$diastolicText');
-                                }
-                                final titleText = titleParts.isEmpty
-                                    ? 'Vitals Entry'
-                                    : titleParts.join(' | ');
-                                final rangeText = _formatTimeRange(
-                                  entry['recording_started_at'] as String?,
-                                  entry['recording_ended_at'] as String?,
-                                );
-                                final subtitleLines = [
-                                  if (entry['spo2'] != null)
-                                    'SpO2 ${entry['spo2']}%',
-                                  if (entry['blood_glucose'] != null)
-                                    'Glucose ${entry['blood_glucose']} mg/dL',
-                                  if (entry['temperature'] != null)
-                                    'Temp ${entry['temperature']} F',
-                                  if ((entry['notes'] as String?)?.isNotEmpty ??
-                                      false)
-                                    'Notes: ${entry['notes']}',
-                                  _formatTimestamp(
-                                    entry['recorded_at'] as String?,
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _numberField(
+                                    controller: _systolicController,
+                                    label: 'BP Systolic',
+                                    hint: '-',
                                   ),
-                                ].where((text) => text.isNotEmpty).toList();
+                                ),
+                                Container(
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                  ),
+                                  height: 56,
+                                  alignment: Alignment.center,
+                                  child: Text('/', style: slashStyle),
+                                ),
+                                Expanded(
+                                  child: _numberField(
+                                    controller: _diastolicController,
+                                    label: 'BP Diastolic',
+                                    hint: '-',
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _numberField(
+                                    controller: _spo2Controller,
+                                    label: 'SpO2',
+                                    hint: '-',
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: _numberField(
+                                    controller: _glucoseController,
+                                    label: 'Blood Glucose',
+                                    hint: '-',
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: _numberField(
+                                    controller: _temperatureController,
+                                    label: 'Temperature',
+                                    hint: '-',
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            TextFormField(
+                              controller: _notesController,
+                              decoration: AppInputDecorations.filledField(
+                                context,
+                                label: 'Notes',
+                              ),
+                              style: AppInputDecorations.fieldTextStyle,
+                              maxLines: 3,
+                              onChanged: (_) => _handleFieldChange(),
+                            ),
+                            const SizedBox(height: 16),
+                            Center(
+                              child: ElevatedButton.icon(
+                                onPressed: _addVitals,
+                                style:
+                                    FormStyles.primaryElevatedButton(context),
+                                icon: const Icon(Icons.add),
+                                label: const Text('Add Vitals Entry'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Recorded Vitals',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      if (_vitals.isEmpty)
+                        const Text('No vitals recorded yet.')
+                      else
+                        ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: _vitals.length,
+                          itemBuilder: (context, index) {
+                            final entry = _vitals[index];
+                            final pulseRaw = entry['pulse_rate'] as int?;
+                            final breathingRaw =
+                                entry['breathing_rate'] as int?;
+                            final systolicRaw =
+                                entry['blood_pressure_systolic'] as int?;
+                            final diastolicRaw =
+                                entry['blood_pressure_diastolic'] as int?;
+                            final pulse =
+                                (pulseRaw == null ||
+                                    pulseRaw == _defaultPulseRate)
+                                ? null
+                                : pulseRaw;
+                            final breathing =
+                                (breathingRaw == null ||
+                                    breathingRaw == _defaultBreathingRate)
+                                ? null
+                                : breathingRaw;
+                            final systolic =
+                                (systolicRaw == null ||
+                                    systolicRaw == _defaultSystolic)
+                                ? null
+                                : systolicRaw;
+                            final diastolic =
+                                (diastolicRaw == null ||
+                                    diastolicRaw == _defaultDiastolic)
+                                ? null
+                                : diastolicRaw;
+                            final titleParts = <String>[];
+                            if (pulse != null) {
+                              titleParts.add('Pulse ${pulse} bpm');
+                            }
+                            if (breathing != null) {
+                              titleParts.add('Resp ${breathing} bpm');
+                            }
+                            if (systolic != null || diastolic != null) {
+                              final systolicText = systolic?.toString() ?? '--';
+                              final diastolicText =
+                                  diastolic?.toString() ?? '--';
+                              titleParts.add('BP $systolicText/$diastolicText');
+                            }
+                            final titleText = titleParts.isEmpty
+                                ? 'Vitals Entry'
+                                : titleParts.join(' | ');
+                            final rangeText = _formatTimeRange(
+                              entry['recording_started_at'] as String?,
+                              entry['recording_ended_at'] as String?,
+                            );
+                            final subtitleLines = [
+                              if (entry['spo2'] != null)
+                                'SpO2 ${entry['spo2']}%',
+                              if (entry['blood_glucose'] != null)
+                                'Glucose ${entry['blood_glucose']} mg/dL',
+                              if (entry['temperature'] != null)
+                                'Temp ${entry['temperature']} F',
+                              if ((entry['notes'] as String?)?.isNotEmpty ??
+                                  false)
+                                'Notes: ${entry['notes']}',
+                              _formatTimestamp(entry['recorded_at'] as String?),
+                            ].where((text) => text.isNotEmpty).toList();
 
-                                return Card(
-                                  margin: const EdgeInsets.only(bottom: 12),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(16),
-                                    child: Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        SizedBox(
-                                          width: 160,
-                                          child: Text(
-                                            rangeText,
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    SizedBox(
+                                      width: 160,
+                                      child: Text(
+                                        rangeText,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            titleText,
                                             style: Theme.of(context)
                                                 .textTheme
-                                                .bodyMedium
+                                                .titleMedium
                                                 ?.copyWith(
                                                   fontWeight: FontWeight.w600,
                                                 ),
                                           ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                titleText,
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .titleMedium
-                                                    ?.copyWith(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                    ),
+                                          if (subtitleLines.isNotEmpty)
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                top: 8.0,
                                               ),
-                                              if (subtitleLines.isNotEmpty)
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                          top: 8.0),
-                                                  child: Text(
-                                                    subtitleLines.join('\n'),
-                                                    style: Theme.of(context)
-                                                        .textTheme
-                                                        .bodyMedium,
-                                                  ),
-                                                ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          const SizedBox(height: 24),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: _goBackToPatientInfo,
-                                  style: OutlinedButton.styleFrom(
-                                    minimumSize: const Size.fromHeight(48),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                  icon: const Icon(Icons.arrow_back),
-                                  label: const Text(
-                                    'Back to Patient Information',
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed: _finishSession,
-                                  style: ElevatedButton.styleFrom(
-                                    minimumSize: const Size.fromHeight(48),
-                                    backgroundColor:
-                                        Theme.of(context).colorScheme.primary,
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: const [
-                                      Text(
-                                        'Finish Session',
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600,
-                                        ),
+                                              child: Text(
+                                                subtitleLines.join('\n'),
+                                                style: Theme.of(
+                                                  context,
+                                                ).textTheme.bodyMedium,
+                                              ),
+                                            ),
+                                        ],
                                       ),
-                                      SizedBox(width: 8),
-                                      Icon(Icons.arrow_forward),
-                                    ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      const SizedBox(height: 24),
+                      if (_isEditing)
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: _discardEdits,
+                                style: FormStyles.primaryOutlinedButton(context),
+                                icon: const Icon(Icons.close),
+                                label: const Text('Discard'),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: _finishSession,
+                                style: FormStyles.primaryElevatedButton(context),
+                                icon: const Icon(Icons.save),
+                                label: const Text(
+                                  'Save',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               ),
-                            ],
+                            ),
+                          ],
+                        )
+                      else
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: _navigateBackToPatientInfo,
+                                style:
+                                    FormStyles.primaryOutlinedButton(context),
+                                icon: const Icon(Icons.arrow_back),
+                                label: const Text('Patient Info'),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: _finishSession,
+                                style:
+                                    FormStyles.primaryElevatedButton(context),
+                                icon: const Icon(Icons.save),
+                                label: const Text(
+                                  'Save',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _showPatientSummary,
+                              style: FormStyles.firstAidOutlinedButton(),
+                              icon: const Icon(Icons.receipt_long),
+                              label: const Text('Summary'),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () => _showFirstAid(),
+                              style: FormStyles.firstAidElevatedButton(),
+                              icon: const Icon(Icons.health_and_safety),
+                              label: const Text('First Aid'),
+                            ),
                           ),
                         ],
                       ),
-                    ),
+                    ],
                   ),
                 ),
+              ),
+            ),
     );
-    
   }
 
   Widget _numberField({

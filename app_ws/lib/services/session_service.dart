@@ -12,9 +12,9 @@ class Session {
     String? patientName,
     DateTime? startedAt,
     Map<String, dynamic>? data,
-  })  : patientName = patientName ?? '',
-        startedAt = startedAt ?? DateTime.now(),
-        data = data ?? {};
+  }) : patientName = patientName ?? '',
+       startedAt = startedAt ?? DateTime.now(),
+       data = data ?? {};
 
   /// Get incident info captured for this session
   Map<String, dynamic> get incidentInfo {
@@ -31,7 +31,9 @@ class Session {
     final info = Map<String, dynamic>.from(data['patientInfo'] ?? {});
     final history = info['medical_history'];
     if (history is List) {
-      info['medical_history'] = history.map((entry) => entry.toString()).join(', ');
+      info['medical_history'] = history
+          .map((entry) => entry.toString())
+          .join(', ');
     }
     return info;
   }
@@ -41,7 +43,9 @@ class Session {
     final copy = Map<String, dynamic>.from(info);
     final history = copy['medical_history'];
     if (history is List) {
-      copy['medical_history'] = history.map((entry) => entry.toString()).join(', ');
+      copy['medical_history'] = history
+          .map((entry) => entry.toString())
+          .join(', ');
     }
     data['patientInfo'] = copy;
     final name = copy['name'] as String?;
@@ -141,6 +145,7 @@ class SessionService {
     } else {
       _sessions.insert(0, session);
     }
+    _sortByRecency();
     _sessionsController.add(sessions);
   }
 
@@ -149,6 +154,7 @@ class SessionService {
     _sessions
       ..clear()
       ..addAll(sessions);
+    _sortByRecency();
     _sessionsController.add(this.sessions);
   }
 
@@ -216,6 +222,10 @@ class SessionService {
   void clearAllSessions() {
     _sessions.clear();
     _sessionsController.add(sessions);
+  }
+
+  void _sortByRecency() {
+    _sessions.sort((a, b) => b.startedAt.compareTo(a.startedAt));
   }
 
   /// Get the most recent session

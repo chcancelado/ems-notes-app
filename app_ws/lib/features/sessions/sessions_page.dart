@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
 
 import '../../services/session_service.dart';
 import '../../services/supabase_session_repository.dart';
+import '../../widgets/patient_summary_dialog.dart';
 import '../../widgets/sidebar_layout.dart';
 
 class SessionsPage extends StatefulWidget {
@@ -16,11 +17,32 @@ class _SessionsPageState extends State<SessionsPage> {
   final _repository = SupabaseSessionRepository();
   bool _isLoading = false;
   String? _error;
+  final Set<String> _deletingSessionIds = <String>{};
+  bool _hasHandledSnackbar = false;
+  static const List<int> _pageSizeOptions = [5, 10, 25, 100];
+  int _rowsPerPage = 10;
+  int _pageIndex = 0;
 
   @override
   void initState() {
     super.initState();
     _loadSessions();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final args =
+        ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    final message = args?['snackbarMessage'] as String?;
+    if (message != null && !_hasHandledSnackbar) {
+      _hasHandledSnackbar = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
+      });
+    }
   }
 
   Future<void> _loadSessions() async {
@@ -47,6 +69,112 @@ class _SessionsPageState extends State<SessionsPage> {
     await _loadSessions();
   }
 
+  Future<void> _editIncident(Session session) async {
+    if (!mounted) return;
+    await Navigator.of(context).pushNamed(
+      '/sessions/new',
+      arguments: {'sessionId': session.id, 'isEditing': true},
+    );
+  }
+
+  Future<void> _editPatient(Session session) async {
+    if (!mounted) return;
+    await Navigator.of(context).pushNamed(
+      '/patient-info',
+      arguments: {'sessionId': session.id, 'isEditing': true},
+    );
+  }
+
+  Future<void> _addVitals(Session session) async {
+    if (!mounted) return;
+    await Navigator.of(context).pushNamed(
+      '/vitals',
+      arguments: {'sessionId': session.id, 'isEditing': true},
+    );
+  }
+
+  Future<void> _showSummary(Session session) async {
+    Session? latest = sessionService.findSessionById(session.id) ?? session;
+    try {
+      final existingVitals = latest.vitals;
+      if (existingVitals.isEmpty) {
+        final fetched = await _repository.fetchVitals(session.id);
+        sessionService.replaceVitals(session.id, fetched);
+        latest = sessionService.findSessionById(session.id) ?? latest;
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not load vitals for summary: $error'),
+          ),
+        );
+      }
+    }
+    if (!mounted) return;
+    await showPatientSummaryDialog(context, session: latest);
+  }
+
+  Future<void> _deleteSession(Session session) async {
+    if (_deletingSessionIds.contains(session.id)) return;
+    final confirmed =
+        await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) {
+            return AlertDialog(
+              title: const Text('Delete Session'),
+              content: const Text(
+                'Are you sure you want to delete this session? '
+                'This action cannot be undone.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('Delete'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
+
+    if (!confirmed) return;
+
+    setState(() {
+      _deletingSessionIds.add(session.id);
+    });
+
+    try {
+      await _repository.deleteSession(session.id);
+      sessionService.removeSession(session.id);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Session deleted.')));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete session: $error')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _deletingSessionIds.remove(session.id);
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final navigator = Navigator.of(context);
@@ -70,6 +198,28 @@ class _SessionsPageState extends State<SessionsPage> {
         initialData: sessionService.sessions,
         builder: (context, snapshot) {
           final sessions = snapshot.data ?? const <Session>[];
+          final sortedSessions = [...sessions]
+            ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
+          final totalSessions = sortedSessions.length;
+          final totalPages =
+              totalSessions == 0 ? 1 : ((totalSessions - 1) ~/ _rowsPerPage) + 1;
+          final int clampedPageIndex = _pageIndex < 0
+              ? 0
+              : _pageIndex >= totalPages
+                  ? totalPages - 1
+                  : _pageIndex;
+          final int startIndex =
+              totalSessions == 0 ? 0 : clampedPageIndex * _rowsPerPage;
+          final int endIndex = totalSessions == 0
+              ? 0
+              : (startIndex + _rowsPerPage > totalSessions
+                  ? totalSessions
+                  : startIndex + _rowsPerPage);
+          final visibleSessions =
+              totalSessions == 0 ? <Session>[] : sortedSessions.sublist(
+                startIndex,
+                endIndex,
+              );
 
           if (_isLoading && sessions.isEmpty) {
             return const Center(child: CircularProgressIndicator());
@@ -82,7 +232,11 @@ class _SessionsPageState extends State<SessionsPage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                    const Icon(
+                      Icons.error_outline,
+                      size: 48,
+                      color: Colors.red,
+                    ),
                     const SizedBox(height: 12),
                     Text(
                       'Failed to load sessions:\n$_error',
@@ -114,9 +268,7 @@ class _SessionsPageState extends State<SessionsPage> {
                     const SizedBox(height: 16.0),
                     Text(
                       'No Sessions Yet',
-                      style: Theme.of(context)
-                          .textTheme
-                          .headlineSmall
+                      style: Theme.of(context).textTheme.headlineSmall
                           ?.copyWith(
                             fontWeight: FontWeight.bold,
                             color: Colors.grey[700],
@@ -126,12 +278,9 @@ class _SessionsPageState extends State<SessionsPage> {
                     Text(
                       'Start a new session to begin documenting patient encounters',
                       textAlign: TextAlign.center,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodyMedium
-                          ?.copyWith(
-                            color: Colors.grey[600],
-                          ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
                     ),
                     const SizedBox(height: 32.0),
                     ElevatedButton.icon(
@@ -153,64 +302,296 @@ class _SessionsPageState extends State<SessionsPage> {
             );
           }
 
-          return RefreshIndicator(
-            onRefresh: _refresh,
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16.0),
-              itemCount: sessions.length,
-              itemBuilder: (context, index) {
-                final session = sessions[index];
-                final incident = session.incidentInfo;
-                final incidentDate = DateTime.tryParse(
-                  incident['incident_date'] as String? ?? '',
-                );
-                final incidentType = incident['type'] as String? ?? 'Incident';
-                final subtitleText = [
-                  if (incidentDate != null)
-                    'Date: ${_formatDate(incidentDate)}',
-                  'Type: $incidentType',
-                ].join('\n');
-
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 12.0),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: Colors.blue,
-                      child: Text(
-                        session.patientName.isNotEmpty
-                            ? session.patientName[0].toUpperCase()
-                            : '?',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    title: Text(
-                      session.patientName.isNotEmpty
+          final theme = Theme.of(context);
+          return Column(
+            children: [
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: _refresh,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(16.0),
+                    itemCount: visibleSessions.length,
+                    itemBuilder: (context, index) {
+                      final session = visibleSessions[index];
+                      final incident = session.incidentInfo;
+                      final address =
+                          (incident['address'] as String? ?? '').trim();
+                      final incidentType =
+                          (incident['type'] as String? ?? '').trim();
+                      final displayAddress = address.isEmpty
+                          ? 'No Address Entered'
+                          : address;
+                      final displayName = session.patientName.isNotEmpty
                           ? session.patientName
-                          : 'Unnamed Patient',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: Text(subtitleText),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () {
-                      Navigator.of(context).pushNamed(
-                        '/report',
-                        arguments: {'sessionId': session.id},
+                          : 'No Patient Name Entered';
+                      final isDeleting = _deletingSessionIds.contains(session.id);
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 12.0),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8.0,
+                            vertical: 6.0,
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 12,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        displayAddress,
+                                        style: theme.textTheme.bodyLarge
+                                            ?.copyWith(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      if (incidentType.isNotEmpty)
+                                        Text(
+                                          incidentType,
+                                          style: theme.textTheme.bodyLarge
+                                              ?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        displayName,
+                                        style: theme.textTheme.bodyMedium,
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        _formatDateTime(session.startedAt),
+                                        style: theme.textTheme.bodyMedium
+                                            ?.copyWith(
+                                          color: Colors.grey[700],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                height: 44,
+                                child: OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 10,
+                                    ),
+                                    minimumSize: const Size(0, 44),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  onPressed: isDeleting
+                                      ? null
+                                      : () => _showSummary(session),
+                                  icon:
+                                      const Icon(Icons.receipt_long, size: 20),
+                                  label: const Text('Summary'),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                height: 44,
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 10,
+                                    ),
+                                    minimumSize: const Size(0, 44),
+                                    backgroundColor:
+                                        theme.colorScheme.primary,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  onPressed:
+                                      isDeleting ? null : () => _addVitals(session),
+                                  icon: const Icon(Icons.monitor_heart, size: 20),
+                                  label: const Text(
+                                    'Add Vitals',
+                                    style: TextStyle(fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                width: 44,
+                                height: 44,
+                                child: isDeleting
+                                    ? const Center(
+                                        child: SizedBox(
+                                          height: 20,
+                                          width: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        ),
+                                      )
+                                    : PopupMenuButton<String>(
+                                        tooltip: 'More actions',
+                                        padding: EdgeInsets.zero,
+                                        onSelected: (value) {
+                                          switch (value) {
+                                            case 'editIncident':
+                                              _editIncident(session);
+                                              break;
+                                            case 'editPatient':
+                                              _editPatient(session);
+                                              break;
+                                            case 'delete':
+                                              _deleteSession(session);
+                                              break;
+                                          }
+                                        },
+                                        itemBuilder: (context) => const [
+                                          PopupMenuItem(
+                                            value: 'editIncident',
+                                            child: ListTile(
+                                              leading: Icon(Icons.edit_note),
+                                              title: Text(
+                                                'Edit Incident Information',
+                                              ),
+                                            ),
+                                          ),
+                                          PopupMenuItem(
+                                            value: 'editPatient',
+                                            child: ListTile(
+                                              leading: Icon(Icons.healing),
+                                              title: Text(
+                                                'Edit Patient Information',
+                                              ),
+                                            ),
+                                          ),
+                                          PopupMenuItem(
+                                            value: 'delete',
+                                            child: ListTile(
+                                              leading: Icon(Icons.delete),
+                                              title: Text('Delete Session'),
+                                            ),
+                                          ),
+                                        ],
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            color: theme.colorScheme.surface,
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                            border: Border.all(
+                                              color: Colors.grey.shade300,
+                                            ),
+                                          ),
+                                          child: const Center(
+                                            child: Icon(Icons.more_vert),
+                                          ),
+                                        ),
+                                      ),
+                              ),
+                            ],
+                          ),
+                        ),
                       );
                     },
                   ),
-                );
-              },
-            ),
+                ),
+              ),
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                child: Row(
+                  children: [
+                    const Text('Rows per page:'),
+                    const SizedBox(width: 8),
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                        child: DropdownButton<int>(
+                          value: _rowsPerPage,
+                          underline: const SizedBox.shrink(),
+                          borderRadius: BorderRadius.circular(12),
+                          dropdownColor: theme.colorScheme.surface,
+                          focusColor: Colors.transparent,
+                          iconEnabledColor: theme.colorScheme.primary,
+                          iconDisabledColor: theme.colorScheme.primary,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurface,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          items: _pageSizeOptions
+                              .map(
+                                (size) => DropdownMenuItem(
+                                  value: size,
+                                  child: Text('$size'),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setState(() {
+                              _rowsPerPage = value;
+                              _pageIndex = 0;
+                            });
+                          },
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      totalSessions == 0
+                          ? 'Showing 0 of 0'
+                          : 'Showing ${startIndex + 1}-$endIndex of $totalSessions',
+                    ),
+                    const SizedBox(width: 12),
+                    IconButton(
+                      tooltip: 'Previous page',
+                      onPressed: clampedPageIndex > 0
+                          ? () {
+                              setState(() {
+                                _pageIndex = clampedPageIndex - 1;
+                              });
+                            }
+                          : null,
+                      icon: const Icon(Icons.chevron_left),
+                    ),
+                    IconButton(
+                      tooltip: 'Next page',
+                      onPressed: clampedPageIndex < totalPages - 1
+                          ? () {
+                              setState(() {
+                                _pageIndex = clampedPageIndex + 1;
+                              });
+                            }
+                          : null,
+                      icon: const Icon(Icons.chevron_right),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           );
         },
       ),
     );
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.month}/${date.day}/${date.year}';
+  String _formatDateTime(DateTime dateTime) {
+    final local = dateTime.toLocal();
+    final two = (int v) => v.toString().padLeft(2, '0');
+    return '${local.month}/${local.day}/${local.year} ${two(local.hour)}:${two(local.minute)}';
   }
 }

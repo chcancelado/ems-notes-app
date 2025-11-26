@@ -5,6 +5,7 @@ import '../../services/session_service.dart';
 import '../../services/supabase_session_repository.dart';
 import '../../widgets/app_input_decorations.dart';
 import '../../widgets/first_aid_dialog.dart';
+import '../../widgets/form_styles.dart';
 import '../../widgets/patient_summary_dialog.dart';
 import '../../widgets/sidebar_layout.dart';
 import '../../widgets/unsaved_changes_dialog.dart';
@@ -24,6 +25,7 @@ class _SessionStartPageState extends State<SessionStartPage> {
   DateTime? _incidentDate;
   TimeOfDay? _arrivalTime;
   String? _sessionId;
+  bool _isEditing = false;
   bool _initialized = false;
   bool _isSaving = false;
   bool _hasUnsavedChanges = false;
@@ -71,6 +73,7 @@ class _SessionStartPageState extends State<SessionStartPage> {
 
     final args =
         ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    _isEditing = args?['isEditing'] as bool? ?? false;
     final sessionId = args?['sessionId'] as String?;
     if (sessionId != null) {
       _sessionId = sessionId;
@@ -238,6 +241,7 @@ class _SessionStartPageState extends State<SessionStartPage> {
           );
 
     try {
+      final wasDirty = _hasUnsavedChanges;
       if (_sessionId == null) {
         final session = await _repository.createSession(
           incidentDate: _incidentDate!,
@@ -260,10 +264,19 @@ class _SessionStartPageState extends State<SessionStartPage> {
 
       _hasUnsavedChanges = false;
       if (!mounted) return;
-      Navigator.of(context).pushReplacementNamed(
-        '/patient-info',
-        arguments: {'sessionId': _sessionId},
-      );
+      if (_isEditing) {
+        Navigator.of(context).pushReplacementNamed(
+          '/sessions',
+          arguments: wasDirty
+              ? {'snackbarMessage': 'Incident information updated.'}
+              : null,
+        );
+      } else {
+        Navigator.of(context).pushReplacementNamed(
+          '/patient-info',
+          arguments: {'sessionId': _sessionId, 'isEditing': _isEditing},
+        );
+      }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -293,16 +306,18 @@ class _SessionStartPageState extends State<SessionStartPage> {
         !incidentOptions.contains(_selectedIncidentType)) {
       incidentOptions.insert(0, _selectedIncidentType);
     }
-    final arrivalLabel = _arrivalTime == null
-        ? 'Select arrival time'
-        : _arrivalTime!.format(context);
+    final fallbackArrival = _arrivalTime ?? TimeOfDay.now();
+    final arrivalLabel = fallbackArrival.format(context);
 
     final incidentLabel = _incidentDate == null
         ? 'Select incident date'
         : '${_incidentDate!.month}/${_incidentDate!.day}/${_incidentDate!.year}';
 
     return SidebarLayout(
-      title: 'Start New Session',
+      title: _isEditing ? 'Edit Incident Information' : 'Start New Session',
+      sessionNavLabel: _isEditing
+          ? 'Edit Incident Information'
+          : 'Start New Session',
       activeDestination: SidebarDestination.newSession,
       onNavigateAway: _confirmLeave,
       onLogout: () async {
@@ -313,50 +328,21 @@ class _SessionStartPageState extends State<SessionStartPage> {
       body: Align(
         alignment: Alignment.topCenter,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 36, 24, 24),
+          padding: FormStyles.pagePadding,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 600),
+            constraints: const BoxConstraints(
+              maxWidth: FormStyles.maxContentWidth,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _showPatientSummary,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: firstAidAccentColor,
-                          backgroundColor: Colors.white,
-                          side: const BorderSide(
-                            color: firstAidAccentColor,
-                            width: 2,
-                          ),
-                          minimumSize: const Size.fromHeight(48),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        icon: const Icon(Icons.receipt_long),
-                        label: const Text('Show Patient Summary'),
-                      ),
+                Center(
+                  child: Text(
+                    'Incident Information',
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () => _showFirstAid(),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: firstAidAccentColor,
-                          foregroundColor: Colors.white,
-                          minimumSize: const Size.fromHeight(48),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        icon: const Icon(Icons.health_and_safety),
-                        label: const Text('Show First Aid'),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Expanded(
@@ -366,23 +352,25 @@ class _SessionStartPageState extends State<SessionStartPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text(
-                            'Incident Information',
-                            style: theme.textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
                           const SizedBox(height: 16),
-                          OutlinedButton.icon(
-                            onPressed: _pickIncidentDate,
-                            icon: const Icon(Icons.event),
-                            label: Text(incidentLabel),
-                          ),
-                          const SizedBox(height: 12),
-                          OutlinedButton.icon(
-                            onPressed: _pickArrivalTime,
-                            icon: const Icon(Icons.schedule),
-                            label: Text(arrivalLabel),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: _pickIncidentDate,
+                                  icon: const Icon(Icons.event),
+                                  label: Text(incidentLabel),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: _pickArrivalTime,
+                                  icon: const Icon(Icons.schedule),
+                                  label: Text(arrivalLabel),
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 16),
                           TextFormField(
@@ -434,71 +422,100 @@ class _SessionStartPageState extends State<SessionStartPage> {
                             },
                           ),
                           const SizedBox(height: 24),
+                          if (_isEditing)
+                            ElevatedButton(
+                              onPressed: _isSaving ? null : _submit,
+                              style: FormStyles.primaryElevatedButton(context),
+                              child: _isSaving
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Text(
+                                      'Save Incident Information',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                            )
+                          else
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: _isSaving ? null : _discard,
+                                    style:
+                                        FormStyles.primaryOutlinedButton(context),
+                                    icon: const Icon(Icons.close_rounded),
+                                    label: const Text('Discard'),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: _isSaving ? null : _submit,
+                                    style:
+                                        FormStyles.primaryElevatedButton(context),
+                                    child: _isSaving
+                                        ? const SizedBox(
+                                            height: 20,
+                                            width: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                'Patient Info',
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                              SizedBox(width: 8),
+                                              Icon(Icons.arrow_forward),
+                                            ],
+                                          ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          const SizedBox(height: 8),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: _showPatientSummary,
+                                  style: FormStyles.firstAidOutlinedButton(),
+                                  icon: const Icon(Icons.receipt_long),
+                                  label: const Text('Summary'),
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () => _showFirstAid(),
+                                  style: FormStyles.firstAidElevatedButton(),
+                                  icon: const Icon(Icons.health_and_safety),
+                                  label: const Text('First Aid'),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
                         ],
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _isSaving ? null : _discard,
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size.fromHeight(48),
-                          side: BorderSide(
-                            color: theme.colorScheme.primary,
-                            width: 2,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        icon: const Icon(Icons.close_rounded),
-                        label: const Text('Discard Session'),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: _isSaving ? null : _submit,
-                        style: ElevatedButton.styleFrom(
-                          minimumSize: const Size.fromHeight(48),
-                          backgroundColor: Theme.of(
-                            context,
-                          ).colorScheme.primary,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: _isSaving
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Text(
-                                    'Continue Patient Information',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  const Icon(Icons.arrow_forward),
-                                ],
-                              ),
-                      ),
-                    ),
-                  ],
                 ),
               ],
             ),

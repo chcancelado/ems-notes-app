@@ -74,11 +74,9 @@ Future<void> showPatientSummaryDialog(
                           ),
                         ),
                         const SizedBox(height: 8),
-                        SelectableText(
-                          sections[i].lines.join('\n'),
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            height: 1.3,
-                          ),
+                        ..._buildSectionLines(
+                          sections[i].lines,
+                          theme.textTheme.bodyMedium?.copyWith(height: 1.3),
                         ),
                         if (i < sections.length - 1)
                           const Divider(height: 32, thickness: 1),
@@ -114,7 +112,7 @@ Future<void> showPatientSummaryDialog(
                       children: [
                         Expanded(
                           child: Text(
-                            'Patient Summary',
+                            'Summary',
                             style: theme.textTheme.titleLarge?.copyWith(
                               fontWeight: FontWeight.w700,
                             ),
@@ -160,16 +158,6 @@ List<_SummarySectionData> _buildSummarySections(
   String? notesDraft,
 }) {
   final sections = <_SummarySectionData>[];
-
-  if (session != null) {
-    final sessionLines = <String>[
-      'Session ID: ${session.id}',
-      'Started: ${_formatDateTime(context, session.startedAt)}',
-      if (session.patientName.isNotEmpty)
-        'Session Patient Name: ${session.patientName}',
-    ];
-    sections.add(_SummarySectionData('Session', sessionLines));
-  }
 
   final incident = _mergeData(session?.incidentInfo, incidentDraft);
   final incidentLines = _buildIncidentLines(context, incident);
@@ -246,7 +234,7 @@ List<String> _buildIncidentLines(
   }
   final arrival = _parseDateTime(incident['arrival_at']);
   if (arrival != null) {
-    lines.add('Arrival: ${_formatDateTime(context, arrival)}');
+    lines.add('Time: ${_formatTimeOnly(context, arrival)}');
   }
   final address = incident['address'] as String?;
   if (address != null && address.isNotEmpty) {
@@ -310,52 +298,58 @@ List<String> _buildVitalsLines(
     return const [];
   }
 
-  return vitals.map((entry) {
-    final parts = <String>[];
+  final lines = <String>[];
+
+  for (var i = 0; i < vitals.length; i++) {
+    final entry = vitals[i];
     final recordedAt =
         _parseDateTime(entry['recorded_at']) ??
         _parseDateTime(entry['recording_ended_at']) ??
         _parseDateTime(entry['recording_started_at']);
     if (recordedAt != null) {
-      parts.add(_formatDateTime(context, recordedAt));
+      lines.add('Recorded: ${_formatDateTime(context, recordedAt)}');
     }
 
     final pulse = _asInt(entry['pulse_rate']);
     if (pulse != null) {
-      parts.add('Pulse $pulse');
+      lines.add('Pulse: $pulse');
     }
     final resp = _asInt(entry['breathing_rate']);
     if (resp != null) {
-      parts.add('Resp $resp');
+      lines.add('Resp: $resp');
     }
     final sys = _asInt(entry['blood_pressure_systolic']);
     final dia = _asInt(entry['blood_pressure_diastolic']);
     if (sys != null && dia != null) {
-      parts.add('BP $sys/$dia');
+      lines.add('BP: $sys/$dia');
     }
     final spo2 = _asInt(entry['spo2']);
     if (spo2 != null) {
-      parts.add('SpO2 $spo2%');
+      lines.add('SpO2: $spo2%');
     }
     final glucose = _asInt(entry['blood_glucose']);
     if (glucose != null) {
-      parts.add('Glucose $glucose');
+      lines.add('Glucose: $glucose');
     }
     final temperature = _asInt(entry['temperature']);
     if (temperature != null) {
-      parts.add('Temp $temperature°F');
+      lines.add('Temp: $temperature°F');
     }
     final notes = entry['notes'] as String?;
     if (notes != null && notes.isNotEmpty) {
-      parts.add('Notes: $notes');
+      lines.add('Notes: $notes');
     }
 
     if (entry['isDraft'] == true) {
-      parts.add('[Unsaved]');
+      lines.add('Status: Unsaved');
     }
 
-    return parts.isEmpty ? 'Vitals entry' : parts.join(' | ');
-  }).toList();
+    if (i < vitals.length - 1) {
+      lines.add('');
+    }
+  }
+
+  return lines;
 }
 
 List<String> _buildChartLines(
@@ -442,6 +436,13 @@ String _formatDateTime(BuildContext context, DateTime dateTime) {
   return '${_formatDate(local)} $time';
 }
 
+String _formatTimeOnly(BuildContext context, DateTime dateTime) {
+  final local = dateTime.toLocal();
+  final hh = local.hour.toString().padLeft(2, '0');
+  final mm = local.minute.toString().padLeft(2, '0');
+  return '$hh:$mm';
+}
+
 String _describeSex(String code) {
   switch (code.toUpperCase()) {
     case 'M':
@@ -472,6 +473,36 @@ String? _formatWeight(dynamic value) {
     return null;
   }
   return '$weight lbs';
+}
+
+List<Widget> _buildSectionLines(List<String> lines, TextStyle? baseStyle) {
+  return [
+    for (var i = 0; i < lines.length; i++) ...[
+      _buildUnderlinedLabelLine(lines[i], baseStyle),
+      if (i < lines.length - 1) const SizedBox(height: 6),
+    ],
+  ];
+}
+
+Widget _buildUnderlinedLabelLine(String line, TextStyle? baseStyle) {
+  final colonIndex = line.indexOf(':');
+  if (colonIndex <= 0) {
+    return SelectableText(line, style: baseStyle);
+  }
+  final label = line.substring(0, colonIndex);
+  final remainder = line.substring(colonIndex);
+  final labelStyle = baseStyle?.copyWith(
+    decoration: TextDecoration.underline,
+  );
+
+  return SelectableText.rich(
+    TextSpan(
+      children: [
+        TextSpan(text: label, style: labelStyle),
+        TextSpan(text: remainder, style: baseStyle),
+      ],
+    ),
+  );
 }
 
 class _SummarySectionData {
