@@ -63,6 +63,22 @@ class HelpPage extends StatelessWidget {
                 const Text(
                   'Contact your administrator or the support team if you get stuck.',
                 ),
+                const SizedBox(height: 32),
+                Center(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      navigator.pushReplacementNamed('/home');
+                    },
+                    icon: const Icon(Icons.home),
+                    label: const Text('Back to Home'),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 32,
+                        vertical: 16,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
