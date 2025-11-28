@@ -631,54 +631,28 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                                 Row(
                                   children: [
                                     Expanded(
-                                      child: Row(
-                                        children: [
-                                          Expanded(
-                                            child: TextFormField(
-                                              controller: _heightFeetController,
-                                              decoration:
-                                                  AppInputDecorations.filledField(
-                                                    context,
-                                                    label: 'Height (ft)',
-                                                  ),
-                                              style: AppInputDecorations
-                                                  .fieldTextStyle,
-                                              keyboardType:
-                                                  TextInputType.number,
-                                              onChanged: (_) =>
-                                                  _handleFieldChange(),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                            child: TextFormField(
-                                              controller:
-                                                  _heightInchesController,
-                                              decoration:
-                                                  AppInputDecorations.filledField(
-                                                    context,
-                                                    label: 'Height (in)',
-                                                  ),
-                                              style: AppInputDecorations
-                                                  .fieldTextStyle,
-                                              keyboardType:
-                                                  TextInputType.number,
-                                              onChanged: (_) =>
-                                                  _handleFieldChange(),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(width: 16),
-                                    Expanded(
                                       child: TextFormField(
-                                        controller: _weightController,
+                                        controller: _heightFeetController,
                                         decoration:
                                             AppInputDecorations.filledField(
-                                              context,
-                                              label: 'Weight (lbs)',
-                                            ),
+                                          context,
+                                          label: 'Height (ft)',
+                                        ),
+                                        style:
+                                            AppInputDecorations.fieldTextStyle,
+                                        keyboardType: TextInputType.number,
+                                        onChanged: (_) => _handleFieldChange(),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _heightInchesController,
+                                        decoration:
+                                            AppInputDecorations.filledField(
+                                          context,
+                                          label: 'Height (in)',
+                                        ),
                                         style:
                                             AppInputDecorations.fieldTextStyle,
                                         keyboardType: TextInputType.number,
@@ -686,6 +660,17 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
                                       ),
                                     ),
                                   ],
+                                ),
+                                const SizedBox(height: 16),
+                                TextFormField(
+                                  controller: _weightController,
+                                  decoration: AppInputDecorations.filledField(
+                                    context,
+                                    label: 'Weight (lbs)',
+                                  ),
+                                  style: AppInputDecorations.fieldTextStyle,
+                                  keyboardType: TextInputType.number,
+                                  onChanged: (_) => _handleFieldChange(),
                                 ),
                                 const SizedBox(height: 16),
                                 TextFormField(

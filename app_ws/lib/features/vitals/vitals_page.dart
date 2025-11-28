@@ -457,20 +457,18 @@ class _VitalsPageState extends State<VitalsPage> {
                                 const SizedBox(width: 16),
                                 Expanded(
                                   child: _numberField(
-                                    controller: _glucoseController,
-                                    label: 'Blood Glucose',
-                                    hint: '-',
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: _numberField(
                                     controller: _temperatureController,
                                     label: 'Temperature',
                                     hint: '-',
                                   ),
                                 ),
                               ],
+                            ),
+                            const SizedBox(height: 16),
+                            _numberField(
+                              controller: _glucoseController,
+                              label: 'Blood Glucose',
+                              hint: '-',
                             ),
                             const SizedBox(height: 16),
                             TextFormField(
