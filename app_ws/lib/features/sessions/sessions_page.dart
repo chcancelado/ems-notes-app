@@ -583,183 +583,183 @@ class _SessionsPageState extends State<SessionsPage> {
                       return Card(
                         margin: const EdgeInsets.only(bottom: 12.0),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8.0,
-                            vertical: 6.0,
-                          ),
-                          child: Row(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 12,
+                              // Session Information
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    addressLine,
+                                    style: theme.textTheme.bodyLarge?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        addressLine,
-                                        style: theme.textTheme.bodyLarge
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.bold,
+                                  const SizedBox(height: 2),
+                                  if (incidentType.isNotEmpty)
+                                    Text(
+                                      incidentType,
+                                      style: theme.textTheme.bodyLarge
+                                          ?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    displayName,
+                                    style: theme.textTheme.bodyMedium,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _formatDateTime(session.startedAt),
+                                    style: theme.textTheme.bodyMedium
+                                        ?.copyWith(color: Colors.grey[700]),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              // Action Buttons Row
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: SizedBox(
+                                      height: 44,
+                                      child: ElevatedButton.icon(
+                                        style: FormStyles.firstAidElevatedButton()
+                                            .copyWith(
+                                          minimumSize: const WidgetStatePropertyAll(
+                                            Size(0, 44),
+                                          ),
+                                          padding: const WidgetStatePropertyAll(
+                                            EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 10,
                                             ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      if (incidentType.isNotEmpty)
-                                        Text(
-                                          incidentType,
-                                          style: theme.textTheme.bodyLarge
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                        ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        displayName,
-                                        style: theme.textTheme.bodyMedium,
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        _formatDateTime(session.startedAt),
-                                        style: theme.textTheme.bodyMedium
-                                            ?.copyWith(color: Colors.grey[700]),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              SizedBox(
-                                height: 44,
-                                child: ElevatedButton.icon(
-                                  style: FormStyles.firstAidElevatedButton()
-                                      .copyWith(
-                                    minimumSize: const WidgetStatePropertyAll(
-                                      Size(0, 44),
-                                    ),
-                                    padding: const WidgetStatePropertyAll(
-                                      EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 10,
-                                      ),
-                                    ),
-                                  ),
-                                  onPressed: isDeleting
-                                      ? null
-                                      : () => _showFirstAid(session),
-                                  icon: const Icon(
-                                    Icons.health_and_safety,
-                                    size: 20,
-                                  ),
-                                  label: const Text(
-                                    'First Aid',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              SizedBox(
-                                height: 44,
-                                child: OutlinedButton.icon(
-                                  style: FormStyles.firstAidOutlinedButton()
-                                      .copyWith(
-                                    minimumSize: const WidgetStatePropertyAll(
-                                      Size(0, 44),
-                                    ),
-                                    padding: const WidgetStatePropertyAll(
-                                      EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 10,
-                                      ),
-                                    ),
-                                  ),
-                                  onPressed: isDeleting
-                                      ? null
-                                      : () => _showSummary(session),
-                                  icon: const Icon(
-                                    Icons.receipt_long,
-                                    size: 20,
-                                  ),
-                                  label: const Text('Summary'),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              SizedBox(
-                                height: 44,
-                                child: ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 10,
-                                    ),
-                                    minimumSize: const Size(0, 44),
-                                    backgroundColor:
-                                        theme.colorScheme.surface,
-                                    foregroundColor:
-                                        theme.colorScheme.onSurface,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      side: BorderSide(
-                                        color: Colors.grey.shade300,
-                                      ),
-                                    ),
-                                  ),
-                                  onPressed: isDeleting
-                                      ? null
-                                      : () => _addVitals(session),
-                                  icon: const Icon(
-                                    Icons.monitor_heart,
-                                    size: 20,
-                                  ),
-                                  label: const Text(
-                                    'Add Vitals',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              SizedBox(
-                                width: 44,
-                                height: 44,
-                                child: isDeleting
-                                    ? const Center(
-                                        child: SizedBox(
-                                          height: 20,
-                                          width: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
                                           ),
                                         ),
-                                      )
-                                    : PopupMenuButton<String>(
-                                        tooltip: 'More actions',
-                                        padding: EdgeInsets.zero,
-                                        onSelected: (value) {
-                                          switch (value) {
-                                            case 'editIncident':
-                                              _editIncident(session);
-                                              break;
-                                            case 'editPatient':
-                                              _editPatient(session);
-                                              break;
-                                            case 'share':
-                                              _shareSession(session);
-                                              break;
-                                            case 'sharedWith':
-                                              _showSharedWith(session);
-                                              break;
-                                            case 'delete':
-                                              _deleteSession(session);
-                                              break;
-                                          }
-                                        },
-                                        itemBuilder: (context) => const [
+                                        onPressed: isDeleting
+                                            ? null
+                                            : () => _showFirstAid(session),
+                                        icon: const Icon(
+                                          Icons.health_and_safety,
+                                          size: 20,
+                                        ),
+                                        label: const Text(
+                                          'First Aid',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: SizedBox(
+                                      height: 44,
+                                      child: OutlinedButton.icon(
+                                        style: FormStyles.firstAidOutlinedButton()
+                                            .copyWith(
+                                          minimumSize: const WidgetStatePropertyAll(
+                                            Size(0, 44),
+                                          ),
+                                          padding: const WidgetStatePropertyAll(
+                                            EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 10,
+                                            ),
+                                          ),
+                                        ),
+                                        onPressed: isDeleting
+                                            ? null
+                                            : () => _showSummary(session),
+                                        icon: const Icon(
+                                          Icons.receipt_long,
+                                          size: 20,
+                                        ),
+                                        label: const Text('Summary'),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: SizedBox(
+                                      height: 44,
+                                      child: ElevatedButton.icon(
+                                        style: ElevatedButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 10,
+                                          ),
+                                          minimumSize: const Size(0, 44),
+                                          backgroundColor: theme.colorScheme.surface,
+                                          foregroundColor: theme.colorScheme.onSurface,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                            side: BorderSide(
+                                              color: Colors.grey.shade300,
+                                            ),
+                                          ),
+                                        ),
+                                        onPressed: isDeleting
+                                            ? null
+                                            : () => _addVitals(session),
+                                        icon: const Icon(
+                                          Icons.monitor_heart,
+                                          size: 20,
+                                        ),
+                                        label: const Text(
+                                          'Add Vitals',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  SizedBox(
+                                    width: 44,
+                                    height: 44,
+                                    child: isDeleting
+                                        ? const Center(
+                                            child: SizedBox(
+                                              height: 20,
+                                              width: 20,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            ),
+                                          )
+                                        : PopupMenuButton<String>(
+                                            tooltip: 'More actions',
+                                            padding: EdgeInsets.zero,
+                                            onSelected: (value) {
+                                              switch (value) {
+                                                case 'editIncident':
+                                                  _editIncident(session);
+                                                  break;
+                                                case 'editPatient':
+                                                  _editPatient(session);
+                                                  break;
+                                                case 'share':
+                                                  _shareSession(session);
+                                                  break;
+                                                case 'sharedWith':
+                                                  _showSharedWith(session);
+                                                  break;
+                                                case 'delete':
+                                                  _deleteSession(session);
+                                                  break;
+                                              }
+                                            },
+                                            itemBuilder: (context) => const [
                                           PopupMenuItem(
                                             value: 'editIncident',
                                             child: ListTile(
@@ -817,6 +817,8 @@ class _SessionsPageState extends State<SessionsPage> {
                                           ),
                                         ),
                                       ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
