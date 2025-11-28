@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 
 import '../../services/session_service.dart';
 import '../../services/supabase_session_repository.dart';
@@ -30,6 +32,7 @@ class _SessionStartPageState extends State<SessionStartPage> {
   bool _isSaving = false;
   bool _hasUnsavedChanges = false;
   bool _fromSharedSessions = false;
+  bool _isGettingLocation = false;
   String _selectedIncidentType = '';
 
   static const List<String> _incidentTypes = [
@@ -292,6 +295,110 @@ class _SessionStartPageState extends State<SessionStartPage> {
     }
   }
 
+  Future<void> _getCurrentLocation() async {
+    setState(() {
+      _isGettingLocation = true;
+    });
+
+    try {
+      // Check if location services are enabled
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Location services are disabled. Please enable them.'),
+          ),
+        );
+        setState(() {
+          _isGettingLocation = false;
+        });
+        return;
+      }
+
+      // Check location permissions
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Location permission denied.'),
+            ),
+          );
+          setState(() {
+            _isGettingLocation = false;
+          });
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Location permissions are permanently denied. Please enable them in settings.',
+            ),
+          ),
+        );
+        setState(() {
+          _isGettingLocation = false;
+        });
+        return;
+      }
+
+      // Get current position
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+
+      // Reverse geocode to get address
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+
+      if (placemarks.isNotEmpty) {
+        final place = placemarks.first;
+        final addressParts = [
+          place.street,
+          place.locality,
+          place.administrativeArea,
+          place.postalCode,
+        ].where((part) => part != null && part.isNotEmpty);
+
+        final address = addressParts.join(', ');
+
+        setState(() {
+          _addressController.text = address;
+          _hasUnsavedChanges = true;
+          _isGettingLocation = false;
+        });
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Location retrieved successfully!'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to get location: $e'),
+        ),
+      );
+      setState(() {
+        _isGettingLocation = false;
+      });
+    }
+  }
+
   Future<void> _showFirstAid() async {
     if (_selectedIncidentType.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -522,21 +629,47 @@ class _SessionStartPageState extends State<SessionStartPage> {
                             ],
                           ),
                           const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _addressController,
-                            decoration: AppInputDecorations.filledField(
-                              context,
-                              label: 'Incident Address',
-                            ),
-                            style: AppInputDecorations.fieldTextStyle,
-                            maxLines: 2,
-                            onChanged: (_) => _handleFieldChange(),
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
-                                return 'Please enter the incident address';
-                              }
-                              return null;
-                            },
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _addressController,
+                                  decoration: AppInputDecorations.filledField(
+                                    context,
+                                    label: 'Incident Address',
+                                  ),
+                                  style: AppInputDecorations.fieldTextStyle,
+                                  maxLines: 2,
+                                  onChanged: (_) => _handleFieldChange(),
+                                  validator: (value) {
+                                    if (value == null || value.trim().isEmpty) {
+                                      return 'Please enter the incident address';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: IconButton.filled(
+                                  onPressed: _isGettingLocation
+                                      ? null
+                                      : _getCurrentLocation,
+                                  icon: _isGettingLocation
+                                      ? const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Icon(Icons.my_location),
+                                  tooltip: 'Use Current Location',
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 16),
                           DropdownButtonFormField<String>(
