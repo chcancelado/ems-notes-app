@@ -125,7 +125,7 @@ class _ChatbotDialogState extends State<ChatbotDialog> {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.3),
+              color: Colors.black.withValues(alpha: 0.3),
               blurRadius: 20,
               offset: const Offset(0, 10),
             ),
@@ -191,7 +191,7 @@ class _ChatbotDialogState extends State<ChatbotDialog> {
                 color: theme.colorScheme.surface,
                 border: Border(
                   top: BorderSide(
-                    color: theme.colorScheme.outline.withOpacity(0.3),
+                    color: theme.colorScheme.outline.withValues(alpha: 0.3),
                   ),
                 ),
               ),
@@ -325,8 +325,8 @@ class _ChatBubble extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 10,
                       color: isUser
-                          ? theme.colorScheme.onPrimary.withOpacity(0.7)
-                          : theme.colorScheme.onSurface.withOpacity(0.6),
+                          ? theme.colorScheme.onPrimary.withValues(alpha: 0.7)
+                          : theme.colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
                   ),
                 ],
@@ -411,7 +411,7 @@ class _LoadingIndicator extends StatelessWidget {
                 Text(
                   'Thinking...',
                   style: TextStyle(
-                    color: theme.colorScheme.onSurface.withOpacity(0.7),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
                   ),
                 ),
               ],
