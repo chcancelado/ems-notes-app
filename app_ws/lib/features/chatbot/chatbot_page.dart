@@ -1,15 +1,34 @@
 import 'package:flutter/material.dart';
 
+import '../../models/session_models.dart';
 import '../../services/openai_service.dart';
 
 // Floating chatbot dialog that can be shown over any page
 class ChatbotDialog extends StatefulWidget {
-  const ChatbotDialog({super.key});
+  final PatientInfo? patientInfo;
+  final List<VitalsEntry>? vitalsHistory;
+  final IncidentInfo? incidentInfo;
 
-  static void show(BuildContext context) {
+  const ChatbotDialog({
+    super.key,
+    this.patientInfo,
+    this.vitalsHistory,
+    this.incidentInfo,
+  });
+
+  static void show(
+    BuildContext context, {
+    PatientInfo? patientInfo,
+    List<VitalsEntry>? vitalsHistory,
+    IncidentInfo? incidentInfo,
+  }) {
     showDialog(
       context: context,
-      builder: (context) => const ChatbotDialog(),
+      builder: (context) => ChatbotDialog(
+        patientInfo: patientInfo,
+        vitalsHistory: vitalsHistory,
+        incidentInfo: incidentInfo,
+      ),
       barrierDismissible: true,
     );
   }
@@ -28,14 +47,61 @@ class _ChatbotDialogState extends State<ChatbotDialog> {
   @override
   void initState() {
     super.initState();
-    // Add welcome message
+    // Add welcome message with context
     _messages.add(
       ChatMessage(
-        text: 'Hello! I\'m your EMS AI assistant. How can I help you today?',
+        text: _buildWelcomeMessage(),
         isUser: false,
         timestamp: DateTime.now(),
       ),
     );
+  }
+
+  String _buildWelcomeMessage() {
+    final buffer = StringBuffer();
+    buffer.write('Hello! I\'m your EMS AI assistant.');
+    
+    // Start building context description
+    if (widget.patientInfo != null || widget.incidentInfo != null) {
+      buffer.write(' You\'re currently documenting');
+      
+      // Add incident type if available
+      if (widget.incidentInfo != null && widget.incidentInfo!.type.isNotEmpty) {
+        buffer.write(' a ${widget.incidentInfo!.type.toLowerCase()} incident');
+      } else {
+        buffer.write(' an incident');
+      }
+      
+      // Add patient info if available
+      if (widget.patientInfo != null) {
+        final patient = widget.patientInfo!;
+        
+        // Get sex
+        String sexStr = '';
+        if (patient.sex == 'M') {
+          sexStr = ' on a male';
+        } else if (patient.sex == 'F') {
+          sexStr = ' on a female';
+        } else {
+          sexStr = ' on a';
+        }
+        
+        buffer.write(sexStr);
+        
+        // Get age if DOB is available
+        if (patient.dateOfBirth != null) {
+          final age = DateTime.now().difference(patient.dateOfBirth!).inDays ~/ 365;
+          buffer.write(' patient aged $age');
+        } else {
+          buffer.write(' patient');
+        }
+      }
+      
+      buffer.write('.');
+    }
+    
+    buffer.write(' How can I help you today?');
+    return buffer.toString();
   }
 
   @override
@@ -57,6 +123,105 @@ class _ChatbotDialogState extends State<ChatbotDialog> {
     }
   }
 
+  String? _buildPatientContext() {
+    if (widget.patientInfo == null && 
+        (widget.vitalsHistory == null || widget.vitalsHistory!.isEmpty) &&
+        widget.incidentInfo == null) {
+      return null;
+    }
+
+    final buffer = StringBuffer();
+    
+    // Add incident information first
+    if (widget.incidentInfo != null) {
+      final incident = widget.incidentInfo!;
+      buffer.writeln('Incident Information:');
+      if (incident.type.isNotEmpty) {
+        buffer.writeln('- Type: ${incident.type}');
+      }
+      if (incident.address.isNotEmpty) {
+        buffer.writeln('- Location: ${incident.address}');
+      }
+      buffer.writeln('- Date: ${incident.incidentDate.toString().substring(0, 10)}');
+      if (incident.arrivalAt != null) {
+        buffer.writeln('- Arrival Time: ${incident.arrivalAt!.toString().substring(11, 16)}');
+      }
+      buffer.writeln();
+    }
+    
+    if (widget.patientInfo != null) {
+      final patient = widget.patientInfo!;
+      buffer.writeln('Patient Demographics:');
+      buffer.writeln('- Name: ${patient.name}');
+      if (patient.dateOfBirth != null) {
+        final age = DateTime.now().difference(patient.dateOfBirth!).inDays ~/ 365;
+        buffer.writeln('- Age: $age years old (DOB: ${patient.dateOfBirth!.toString().substring(0, 10)})');
+      }
+      buffer.writeln('- Sex: ${patient.sex == "M" ? "Male" : patient.sex == "F" ? "Female" : "Unknown"}');
+      if (patient.weightInPounds != null) {
+        buffer.writeln('- Weight: ${patient.weightInPounds} lbs');
+      }
+      if (patient.heightInInches != null) {
+        final feet = patient.heightInInches! ~/ 12;
+        final inches = patient.heightInInches! % 12;
+        buffer.writeln('- Height: $feet\' $inches"');
+      }
+      if (patient.chiefComplaint != null && patient.chiefComplaint!.isNotEmpty) {
+        buffer.writeln('- Chief Complaint: ${patient.chiefComplaint}');
+      }
+      if (patient.medicalHistory.isNotEmpty) {
+        buffer.writeln('- Medical History: ${patient.medicalHistory}');
+      }
+      if (patient.medications != null && patient.medications!.isNotEmpty) {
+        buffer.writeln('- Current Medications: ${patient.medications}');
+      }
+      if (patient.allergies != null && patient.allergies!.isNotEmpty) {
+        buffer.writeln('- Allergies: ${patient.allergies}');
+      }
+    }
+
+    if (widget.vitalsHistory != null && widget.vitalsHistory!.isNotEmpty) {
+      buffer.writeln('\nMost Recent Vital Signs:');
+      final latest = widget.vitalsHistory!.first;
+      if (latest.pulseRate != null) {
+        buffer.writeln('- Heart Rate: ${latest.pulseRate} bpm');
+      }
+      if (latest.systolic != null && latest.diastolic != null) {
+        buffer.writeln('- Blood Pressure: ${latest.systolic}/${latest.diastolic} mmHg');
+      }
+      if (latest.breathingRate != null) {
+        buffer.writeln('- Respiratory Rate: ${latest.breathingRate} breaths/min');
+      }
+      if (latest.spo2 != null) {
+        buffer.writeln('- SpO2: ${latest.spo2}%');
+      }
+      if (latest.temperature != null) {
+        buffer.writeln('- Temperature: ${latest.temperature}°F');
+      }
+      if (latest.bloodGlucose != null) {
+        buffer.writeln('- Blood Glucose: ${latest.bloodGlucose} mg/dL');
+      }
+      if (latest.recordedAt != null) {
+        buffer.writeln('- Recorded: ${_formatVitalTime(latest.recordedAt!)}');
+      }
+      
+      if (widget.vitalsHistory!.length > 1) {
+        buffer.writeln('\nTotal vital sign readings: ${widget.vitalsHistory!.length}');
+      }
+    }
+
+    return buffer.toString().trim();
+  }
+
+  String _formatVitalTime(DateTime timestamp) {
+    final now = DateTime.now();
+    final diff = now.difference(timestamp);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ${diff.inMinutes % 60}m ago';
+    return timestamp.toString().substring(0, 16);
+  }
+
   Future<void> _sendMessage() async {
     final message = _messageController.text.trim();
     if (message.isEmpty || _isLoading) return;
@@ -76,7 +241,11 @@ class _ChatbotDialogState extends State<ChatbotDialog> {
     _scrollToBottom();
 
     try {
-      final response = await _openAIService.getEMSAssistance(userQuestion: message);
+      final patientContext = _buildPatientContext();
+      final response = await _openAIService.getEMSAssistance(
+        userQuestion: message,
+        patientContext: patientContext,
+      );
       
       if (mounted) {
         setState(() {
@@ -143,28 +312,73 @@ class _ChatbotDialogState extends State<ChatbotDialog> {
                   topRight: Radius.circular(16),
                 ),
               ),
-              child: Row(
+              child: Column(
                 children: [
-                  Icon(
-                    Icons.smart_toy,
-                    color: theme.colorScheme.onPrimary,
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.smart_toy,
+                        color: theme.colorScheme.onPrimary,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'AI Assistant',
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                color: theme.colorScheme.onPrimary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            if (widget.patientInfo != null)
+                              Text(
+                                'Patient: ${widget.patientInfo!.name}',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onPrimary.withValues(alpha: 0.9),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          Icons.close,
+                          color: theme.colorScheme.onPrimary,
+                        ),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  Text(
-                    'AI Assistant',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      color: theme.colorScheme.onPrimary,
-                      fontWeight: FontWeight.bold,
+                  if (_buildPatientContext() != null)
+                    Container(
+                      margin: const EdgeInsets.only(top: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.onPrimary.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.check_circle,
+                            size: 16,
+                            color: theme.colorScheme.onPrimary,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            widget.incidentInfo != null 
+                                ? 'Incident & patient context active'
+                                : 'Patient context active',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    icon: Icon(
-                      Icons.close,
-                      color: theme.colorScheme.onPrimary,
-                    ),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
                 ],
               ),
             ),

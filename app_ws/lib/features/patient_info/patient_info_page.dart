@@ -185,6 +185,62 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
     }
   }
 
+  PatientInfo? _getCurrentPatientInfo() {
+    if (_sessionId == null) return null;
+    
+    final session = sessionService.findSessionById(_sessionId!);
+    if (session?.patientInfoModel != null) {
+      return session!.patientInfoModel;
+    }
+
+    // Build from current form if not yet saved
+    final name = _nameController.text.trim();
+    if (name.isEmpty) return null;
+
+    int? heightInInches;
+    final feet = int.tryParse(_heightFeetController.text.trim());
+    final inches = int.tryParse(_heightInchesController.text.trim());
+    if (feet != null) {
+      heightInInches = (feet * 12) + (inches ?? 0);
+    }
+
+    return PatientInfo(
+      name: name,
+      dateOfBirth: _dateOfBirth,
+      sex: _sex,
+      heightInInches: heightInInches,
+      weightInPounds: int.tryParse(_weightController.text.trim()),
+      allergies: _allergiesController.text.trim().isEmpty 
+          ? null 
+          : _allergiesController.text.trim(),
+      medications: _medicationsController.text.trim().isEmpty
+          ? null
+          : _medicationsController.text.trim(),
+      medicalHistory: _medicalHistoryController.text.trim(),
+      chiefComplaint: _chiefComplaintController.text.trim().isEmpty
+          ? null
+          : _chiefComplaintController.text.trim(),
+    );
+  }
+
+  List<VitalsEntry>? _getCurrentVitals() {
+    if (_sessionId == null) return null;
+    
+    final session = sessionService.findSessionById(_sessionId!);
+    if (session == null) return null;
+
+    final vitals = session.vitals;
+    if (vitals.isEmpty) return null;
+
+    return vitals.map((v) => VitalsEntry.fromSupabaseRow(v)).toList();
+  }
+
+  IncidentInfo? _getCurrentIncidentInfo() {
+    if (_sessionId == null) return null;
+    final session = sessionService.findSessionById(_sessionId!);
+    return session?.incidentInfoModel;
+  }
+
   Future<bool> _confirmLeave() async {
     if (!_hasUnsavedChanges) {
       return true;
@@ -512,6 +568,9 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
       title: _isEditing ? 'Edit Patient Information' : 'Start New Session',
       sessionNavLabel: _isEditing ? null : 'Start New Session',
       activeDestination: _activeDestination,
+      currentPatientInfo: _getCurrentPatientInfo(),
+      currentVitals: _getCurrentVitals(),
+      currentIncidentInfo: _getCurrentIncidentInfo(),
       onNavigateAway: _confirmLeave,
       onLogout: () async {
         final navigator = Navigator.of(context);

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
 
+import '../../models/session_models.dart';
 import '../../services/session_service.dart';
 import '../../services/supabase_session_repository.dart';
 import '../../widgets/app_input_decorations.dart';
@@ -169,6 +170,25 @@ class _VitalsPageState extends State<VitalsPage> {
       _temperatureController,
       _notesController,
     ].any((controller) => controller.text.trim().isNotEmpty);
+  }
+
+  PatientInfo? _getCurrentPatientInfo() {
+    if (_sessionId == null) return null;
+    final session = sessionService.findSessionById(_sessionId!);
+    return session?.patientInfoModel;
+  }
+
+  List<VitalsEntry>? _getCurrentVitals() {
+    if (_sessionId == null) return null;
+    final vitals = _vitals;
+    if (vitals.isEmpty) return null;
+    return vitals.map((v) => VitalsEntry.fromSupabaseRow(v)).toList();
+  }
+
+  IncidentInfo? _getCurrentIncidentInfo() {
+    if (_sessionId == null) return null;
+    final session = sessionService.findSessionById(_sessionId!);
+    return session?.incidentInfoModel;
   }
 
   Future<bool> _confirmLeave() async {
@@ -356,6 +376,9 @@ class _VitalsPageState extends State<VitalsPage> {
       title: _isEditing ? 'Add Vitals' : 'Start New Session',
       sessionNavLabel: _isEditing ? null : 'Start New Session',
       activeDestination: _activeDestination,
+      currentPatientInfo: _getCurrentPatientInfo(),
+      currentVitals: _getCurrentVitals(),
+      currentIncidentInfo: _getCurrentIncidentInfo(),
       onNavigateAway: _confirmLeave,
       onLogout: () async {
         if (!mounted) return;

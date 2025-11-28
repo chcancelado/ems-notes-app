@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 
+import '../../models/session_models.dart';
 import '../../services/session_service.dart';
 import '../../services/supabase_session_repository.dart';
 import '../../widgets/app_input_decorations.dart';
@@ -449,6 +450,44 @@ class _SessionStartPageState extends State<SessionStartPage> {
     );
   }
 
+  PatientInfo? _getCurrentPatientInfo() {
+    if (_sessionId == null) return null;
+    final session = sessionService.findSessionById(_sessionId!);
+    return session?.patientInfoModel;
+  }
+
+  List<VitalsEntry>? _getCurrentVitals() {
+    if (_sessionId == null) return null;
+    final session = sessionService.findSessionById(_sessionId!);
+    final vitals = session?.vitals ?? [];
+    if (vitals.isEmpty) return null;
+    return vitals.map((v) => VitalsEntry.fromSupabaseRow(v)).toList();
+  }
+
+  IncidentInfo? _getCurrentIncidentInfo() {
+    // Build from current form values
+    if (_incidentDate == null) return null;
+    
+    // Convert TimeOfDay to DateTime if available
+    DateTime? arrivalDateTime;
+    if (_arrivalTime != null) {
+      arrivalDateTime = DateTime(
+        _incidentDate!.year,
+        _incidentDate!.month,
+        _incidentDate!.day,
+        _arrivalTime!.hour,
+        _arrivalTime!.minute,
+      );
+    }
+    
+    return IncidentInfo(
+      incidentDate: _incidentDate!,
+      arrivalAt: arrivalDateTime,
+      address: _addressController.text,
+      type: _selectedIncidentType,
+    );
+  }
+
   Future<bool> _confirmLeave() async {
     if (!_hasUnsavedChanges) {
       return true;
@@ -574,6 +613,9 @@ class _SessionStartPageState extends State<SessionStartPage> {
       title: _isEditing ? 'Edit Incident Information' : 'Start New Session',
       sessionNavLabel: _isEditing ? null : 'Start New Session',
       activeDestination: _activeDestination,
+      currentPatientInfo: _getCurrentPatientInfo(),
+      currentVitals: _getCurrentVitals(),
+      currentIncidentInfo: _getCurrentIncidentInfo(),
       onNavigateAway: _confirmLeave,
       onLogout: () async {
         final navigator = Navigator.of(context);

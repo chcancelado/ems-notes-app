@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../features/chatbot/chatbot_page.dart';
+import '../models/session_models.dart';
 import '../services/agency_service.dart';
 
 enum SidebarDestination {
@@ -26,6 +27,9 @@ class SidebarLayout extends StatefulWidget {
     this.onBackRequested,
     this.onLogout,
     this.sessionNavLabel,
+    this.currentPatientInfo,
+    this.currentVitals,
+    this.currentIncidentInfo,
   });
 
   final String title;
@@ -38,6 +42,9 @@ class SidebarLayout extends StatefulWidget {
   final Future<bool> Function()? onBackRequested;
   final Future<void> Function()? onLogout;
   final String? sessionNavLabel;
+  final PatientInfo? currentPatientInfo;
+  final List<VitalsEntry>? currentVitals;
+  final IncidentInfo? currentIncidentInfo;
 
   @override
   State<SidebarLayout> createState() => _SidebarLayoutState();
@@ -251,7 +258,12 @@ class _SidebarLayoutState extends State<SidebarLayout> {
                   ),
             floatingActionButton: widget.activeDestination != SidebarDestination.chatbot
                 ? FloatingActionButton(
-                    onPressed: () => ChatbotDialog.show(context),
+                    onPressed: () => ChatbotDialog.show(
+                      context,
+                      patientInfo: widget.currentPatientInfo,
+                      vitalsHistory: widget.currentVitals,
+                      incidentInfo: widget.currentIncidentInfo,
+                    ),
                     tooltip: 'AI Assistant',
                     child: const Icon(Icons.smart_toy),
                   )
