@@ -9,6 +9,7 @@ enum SidebarDestination {
   sharedSessions,
   agency,
   account,
+  chatbot,
 }
 
 class SidebarLayout extends StatefulWidget {
@@ -137,6 +138,8 @@ class _SidebarLayoutState extends State<SidebarLayout> {
         return '/agency';
       case SidebarDestination.account:
         return '/account';
+      case SidebarDestination.chatbot:
+        return '/chatbot';
     }
   }
 
@@ -308,6 +311,12 @@ class _SidebarNavigation extends StatelessWidget {
         label: 'Shared With Me',
         selected: active == SidebarDestination.sharedSessions,
         onTap: () => onSelected(SidebarDestination.sharedSessions),
+      ),
+      _NavTile(
+        icon: Icons.smart_toy,
+        label: 'AI Assistant',
+        selected: active == SidebarDestination.chatbot,
+        onTap: () => onSelected(SidebarDestination.chatbot),
       ),
       _NavTile(
         icon: Icons.group,

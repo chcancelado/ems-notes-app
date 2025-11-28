@@ -13,6 +13,7 @@ import 'features/sessions/index.dart';
 import 'features/vitals/index.dart';
 import 'features/agency/index.dart';
 import 'features/account/index.dart';
+import 'features/chatbot/chatbot_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -126,6 +127,7 @@ class EMSNotesApp extends StatelessWidget {
         '/agency': (context) => const AgencyPage(),
         '/account': (context) => const AccountPage(),
         '/help': (context) => const HelpPage(),
+        '/chatbot': (context) => const ChatbotPage(),
       },
     );
   }
