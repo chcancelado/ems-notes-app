@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../features/chatbot/chatbot_page.dart';
 import '../services/agency_service.dart';
 
 enum SidebarDestination {
@@ -248,7 +249,13 @@ class _SidebarLayoutState extends State<SidebarLayout> {
                       ),
                     ],
                   ),
-            floatingActionButton: widget.floatingActionButton,
+            floatingActionButton: widget.activeDestination != SidebarDestination.chatbot
+                ? FloatingActionButton(
+                    onPressed: () => ChatbotDialog.show(context),
+                    tooltip: 'AI Assistant',
+                    child: const Icon(Icons.smart_toy),
+                  )
+                : null,
           );
         },
       ),
@@ -311,12 +318,6 @@ class _SidebarNavigation extends StatelessWidget {
         label: 'Shared With Me',
         selected: active == SidebarDestination.sharedSessions,
         onTap: () => onSelected(SidebarDestination.sharedSessions),
-      ),
-      _NavTile(
-        icon: Icons.smart_toy,
-        label: 'AI Assistant',
-        selected: active == SidebarDestination.chatbot,
-        onTap: () => onSelected(SidebarDestination.chatbot),
       ),
       _NavTile(
         icon: Icons.group,
