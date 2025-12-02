@@ -260,11 +260,12 @@ class _VitalsPageState extends State<VitalsPage> {
   Future<void> _finishSession() async {
     final canLeave = await _confirmLeave();
     if (!canLeave || !mounted) return;
+    final message = _isEditing ? 'Vitals added.' : 'New session saved.';
     Navigator.of(context).pushNamedAndRemoveUntil(
       _sessionsRoute,
       (route) => false,
       arguments: {
-        'snackbarMessage': 'New session saved.',
+        'snackbarMessage': message,
         'sharedOnly': _fromSharedSessions,
       },
     );
@@ -312,17 +313,6 @@ class _VitalsPageState extends State<VitalsPage> {
       return;
     }
     await showFirstAidDialog(context, type);
-  }
-
-  String _formatTimestamp(String? value) {
-    if (value == null || value.isEmpty) return '';
-    final parsed = DateTime.tryParse(value);
-    if (parsed == null) return value;
-    final time = TimeOfDay(
-      hour: parsed.hour,
-      minute: parsed.minute,
-    ).format(context);
-    return '${parsed.month}/${parsed.day}/${parsed.year} at $time';
   }
 
   String _formatTimeRange(String? startIso, String? endIso) {
@@ -568,7 +558,6 @@ class _VitalsPageState extends State<VitalsPage> {
                               if ((entry['notes'] as String?)?.isNotEmpty ??
                                   false)
                                 'Notes: ${entry['notes']}',
-                              _formatTimestamp(entry['recorded_at'] as String?),
                             ].where((text) => text.isNotEmpty).toList();
 
                             return Card(

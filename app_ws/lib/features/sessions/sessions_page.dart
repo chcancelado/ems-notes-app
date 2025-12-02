@@ -683,11 +683,7 @@ class _SessionsPageState extends State<SessionsPage> {
                                       ),
                                     ),
                                   ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
+                                  const SizedBox(width: 8),
                                   Expanded(
                                     child: SizedBox(
                                       height: 44,

@@ -131,18 +131,28 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
   void _applyPatientInfo(PatientInfo patientInfo) {
     _isHydrating = true;
     setState(() {
-      final name = patientInfo.name;
-      _nameController.text = name.isNotEmpty && name != _defaultPatientName
-          ? name
-          : '';
+      final name = patientInfo.name.trim();
+      _nameController.text =
+          name.isNotEmpty && name != _defaultPatientName ? name : '';
+
       final dob = patientInfo.dateOfBirth;
-      if (dob != null) {
+      if (dob != null && !_isPlaceholderDob(dob)) {
         _dateOfBirth = dob;
         _dobController.text = '${dob.month}/${dob.day}/${dob.year}';
+      } else {
+        _dateOfBirth = null;
+        _dobController.clear();
       }
-      _sex = patientInfo.sex;
+
+      final sex = patientInfo.sex;
+      if (sex.isNotEmpty && sex.toUpperCase() != 'U') {
+        _sex = sex;
+      } else {
+        _sex = 'U';
+      }
+
       final heightInches = patientInfo.heightInInches;
-      if (heightInches != null && heightInches > 0) {
+      if (heightInches != null && heightInches > 1) {
         final feet = heightInches ~/ 12;
         final inches = heightInches % 12;
         _heightFeetController.text = feet.toString();
@@ -151,8 +161,13 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
         _heightFeetController.clear();
         _heightInchesController.clear();
       }
+
       final weight = patientInfo.weightInPounds;
-      _weightController.text = weight == null ? '' : '$weight';
+      if (weight != null && weight > 1) {
+        _weightController.text = '$weight';
+      } else {
+        _weightController.clear();
+      }
       _allergiesController.text = patientInfo.allergies ?? '';
       _medicationsController.text = patientInfo.medications ?? '';
       _chiefComplaintController.text = patientInfo.chiefComplaint ?? '';
@@ -160,6 +175,11 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
       _hasUnsavedChanges = false;
     });
     _isHydrating = false;
+  }
+
+  bool _isPlaceholderDob(DateTime dob) {
+    final now = DateTime.now();
+    return dob.year == now.year && dob.month == now.month && dob.day == now.day;
   }
 
   SidebarDestination get _activeDestination {
@@ -207,16 +227,19 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
     });
   }
 
-  Future<void> _saveAndContinue() async {
-    if (_isSaving) return;
+  Future<bool> _savePatientInfo() async {
+    if (_isSaving) return false;
     if (_sessionId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No active session. Start a session first.'),
-        ),
-      );
-      return;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No active session. Start a session first.'),
+          ),
+        );
+      }
+      return false;
     }
+
     setState(() {
       _isSaving = true;
     });
@@ -237,7 +260,6 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
       final heightInches = totalHeight > 0 ? totalHeight : 1;
       final weightValue = (weight ?? 0) > 0 ? weight! : 1;
 
-      final wasDirty = _hasUnsavedChanges;
       final savedInfo = await _repository.upsertPatientInfo(
         sessionId: _sessionId!,
         name: safeName.isEmpty ? _defaultPatientName : safeName,
@@ -251,34 +273,19 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
         chiefComplaint: _chiefComplaintController.text.trim(),
       );
 
-      if (!mounted) return;
+      if (!mounted) return false;
       sessionService.updatePatientInfo(_sessionId!, savedInfo);
       setState(() {
         _hasUnsavedChanges = false;
       });
-
-      if (_isEditing) {
-        Navigator.of(context).pushReplacementNamed(
-          _sessionsRoute,
-          arguments: wasDirty
-              ? {
-                  'snackbarMessage': 'Patient information updated.',
-                  'sharedOnly': _fromSharedSessions,
-                }
-              : null,
-        );
-      } else {
-        Navigator.of(context).pushReplacementNamed(
-          '/vitals',
-          arguments: {'sessionId': _sessionId, 'isEditing': _isEditing},
-        );
-      }
+      return true;
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to save patient info: $error')),
         );
       }
+      return false;
     } finally {
       if (mounted) {
         setState(() {
@@ -288,9 +295,34 @@ class _PatientInfoPageState extends State<PatientInfoPage> {
     }
   }
 
+  Future<void> _saveAndContinue() async {
+    if (_isSaving) return;
+    final wasDirty = _hasUnsavedChanges;
+    final success = await _savePatientInfo();
+    if (!success || !mounted) return;
+
+    if (_isEditing) {
+      Navigator.of(context).pushReplacementNamed(
+        _sessionsRoute,
+        arguments: wasDirty
+            ? {
+                'snackbarMessage': 'Patient information updated.',
+                'sharedOnly': _fromSharedSessions,
+              }
+            : null,
+      );
+    } else {
+      Navigator.of(context).pushReplacementNamed(
+        '/vitals',
+        arguments: {'sessionId': _sessionId, 'isEditing': _isEditing},
+      );
+    }
+  }
+
   Future<void> _goBackToIncident() async {
-    final canLeave = await _confirmLeave();
-    if (!canLeave || !mounted) return;
+    if (_isSaving) return;
+    final success = await _savePatientInfo();
+    if (!success || !mounted) return;
     Navigator.of(context).pushReplacementNamed(
       '/sessions/new',
       arguments: {'sessionId': _sessionId, 'isEditing': _isEditing},

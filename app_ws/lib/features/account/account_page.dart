@@ -215,11 +215,6 @@ class _AccountPageState extends State<AccountPage> {
                         'Agency: ${_account!.agencyCode ?? 'N/A'}',
                         style: theme.textTheme.bodyLarge,
                       ),
-                      if ((_account!.agencyName ?? '').isNotEmpty)
-                        Text(
-                          'Agency Name: ${_account!.agencyName}',
-                          style: theme.textTheme.bodyLarge,
-                        ),
                       const SizedBox(height: 24),
                       ElevatedButton.icon(
                         onPressed: _changePassword,

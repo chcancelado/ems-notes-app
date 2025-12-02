@@ -1,0 +1,221 @@
+    return SidebarLayout(
+      title: 'Vitals',
+      activeDestination: SidebarDestination.newSession,
+      onNavigateAway: _confirmLeave,
+      onLogout: () async {
+        if (!mounted) return;
+        final navigator = Navigator.of(context);
+        await Supabase.instance.client.auth.signOut();
+        if (!mounted) return;
+        navigator.pushReplacementNamed('/login');
+      },
+      body: session == null
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text('No active session found. Start a session first.'),
+              ),
+            )
+          : _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : Align(
+                  alignment: Alignment.topCenter,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 720),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (session.patientName.isNotEmpty)
+                            Text(
+                              'Patient: ${session.patientName}',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.bold),
+                            ),
+                          const SizedBox(height: 16),
+                          Form(
+                            key: _formKey,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _numberField(
+                                        controller: _pulseController,
+                                        label: 'Pulse Rate',
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: _numberField(
+                                        controller: _breathingController,
+                                        label: 'Breathing Rate',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _numberField(
+                                        controller: _systolicController,
+                                        label: 'BP Systolic',
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: _numberField(
+                                        controller: _diastolicController,
+                                        label: 'BP Diastolic',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _numberField(
+                                        controller: _spo2Controller,
+                                        label: 'SpO2',
+                                        required: false,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: _numberField(
+                                        controller: _glucoseController,
+                                        label: 'Blood Glucose',
+                                        required: false,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: _numberField(
+                                        controller: _temperatureController,
+                                        label: 'Temperature',
+                                        required: false,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                TextFormField(
+                                  controller: _notesController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Notes',
+                                  ),
+                                  maxLines: 3,
+                                  onChanged: (_) => _handleFieldChange(),
+                                ),
+                                const SizedBox(height: 16),
+                                ElevatedButton.icon(
+                                  onPressed: _addVitals,
+                                  icon: const Icon(Icons.add),
+                                  label: const Text('Add Vitals Entry'),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          Text(
+                            'Recorded Vitals',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          if (_vitals.isEmpty)
+                            const Text('No vitals recorded yet.')
+                          else
+                            ListView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: _vitals.length,
+                              itemBuilder: (context, index) {
+                                final entry = _vitals[index];
+                                return Card(
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  child: ListTile(
+                                    title: Text(
+                                      'Pulse ${entry['pulse_rate']} | '
+                                      'Resp ${entry['breathing_rate']} | '
+                                      'BP ${entry['blood_pressure_systolic']}/${entry['blood_pressure_diastolic']}',
+                                    ),
+                                    subtitle: Text(
+                                      [
+                                        if (entry['spo2'] != null)
+                                          'SpO2 ${entry['spo2']}%',
+                                        if (entry['blood_glucose'] != null)
+                                          'Glucose ${entry['blood_glucose']}',
+                                        if (entry['temperature'] != null)
+                                          'Temp ${entry['temperature']} F',
+                                        if ((entry['notes'] as String?)
+                                                ?.isNotEmpty ??
+                                            false)
+                                          'Notes: ${entry['notes']}',
+                                        _formatTimestamp(
+                                            entry['recorded_at'] as String?),
+                                      ].where((text) => text.isNotEmpty).join('\n'),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          const SizedBox(height: 24),
+                          OutlinedButton(
+                            onPressed: () async {
+                              final canLeave = await _confirmLeave();
+                              if (!canLeave) return;
+                              if (!mounted) return;
+                              Navigator.of(context).pushNamedAndRemoveUntil(
+                                '/home',
+                                (route) => route.settings.name == '/home',
+                              );
+                            },
+                            child: const Text('Finish Session'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+          ),
+    );
+  }
+
+  Widget _numberField({
+    required TextEditingController controller,
+    required String label,
+    bool required = true,
+  }) {
+    return TextFormField(
+      controller: controller,
+      decoration: InputDecoration(labelText: label),
+      keyboardType: TextInputType.number,
+      onChanged: (_) => _handleFieldChange(),
+      validator: (value) {
+        if (!required && (value == null || value.trim().isEmpty)) {
+          return null;
+        }
+        if (value == null || value.trim().isEmpty) {
+          return 'Enter $label';
+        }
+        final parsed = int.tryParse(value.trim());
+        if (parsed == null) {
+          return 'Enter a whole number';
+        }
+        if (parsed < 0) {
+          return 'Enter a positive value';
+        }
+        return null;
+      },
+    );
+  }
+}

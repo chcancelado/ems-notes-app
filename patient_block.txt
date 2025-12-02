@@ -1,0 +1,200 @@
+    return SidebarLayout(
+      title: 'Patient Information',
+      activeDestination: SidebarDestination.newSession,
+      onNavigateAway: _confirmLeave,
+      onLogout: () async {
+        await Supabase.instance.client.auth.signOut();
+        if (!mounted) return;
+        Navigator.of(context).pushReplacementNamed('/login');
+      },
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Align(
+              alignment: Alignment.topCenter,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'Patient Details',
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _nameController,
+                          decoration: const InputDecoration(
+                            labelText: 'Name',
+                          ),
+                          onChanged: (_) => _handleFieldChange(),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Please enter the patient\'s name';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        GestureDetector(
+                          onTap: _pickDateOfBirth,
+                          child: AbsorbPointer(
+                            child: TextFormField(
+                              controller: _dobController,
+                              decoration: const InputDecoration(
+                                labelText: 'Date of Birth',
+                                suffixIcon: Icon(Icons.calendar_today),
+                              ),
+                              onChanged: (_) => _handleFieldChange(),
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Select the date of birth';
+                                }
+                                return null;
+                              },
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<String>(
+                          value: _sex,
+                          decoration: const InputDecoration(
+                            labelText: 'Sex',
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 'M', child: Text('Male')),
+                            DropdownMenuItem(value: 'F', child: Text('Female')),
+                            DropdownMenuItem(value: 'O', child: Text('Other')),
+                            DropdownMenuItem(value: 'U', child: Text('Unknown')),
+                          ],
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setState(() {
+                              _sex = value;
+                              if (!_isHydrating) {
+                                _hasUnsavedChanges = true;
+                              }
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                controller: _heightController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Height (inches)',
+                                ),
+                                keyboardType: TextInputType.number,
+                                onChanged: (_) => _handleFieldChange(),
+                                validator: (value) {
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'Enter height';
+                                  }
+                                  final parsed = int.tryParse(value);
+                                  if (parsed == null || parsed <= 0) {
+                                    return 'Enter a positive number';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: TextFormField(
+                                controller: _weightController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Weight (lbs)',
+                                ),
+                                keyboardType: TextInputType.number,
+                                onChanged: (_) => _handleFieldChange(),
+                                validator: (value) {
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'Enter weight';
+                                  }
+                                  final parsed = int.tryParse(value);
+                                  if (parsed == null || parsed <= 0) {
+                                    return 'Enter a positive number';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _allergiesController,
+                          decoration: const InputDecoration(
+                            labelText: 'Allergies',
+                            hintText: 'List known allergies',
+                          ),
+                          maxLines: 2,
+                          onChanged: (_) => _handleFieldChange(),
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _medicationsController,
+                          decoration: const InputDecoration(
+                            labelText: 'Medications',
+                            hintText: 'List current medications',
+                          ),
+                          maxLines: 2,
+                          onChanged: (_) => _handleFieldChange(),
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _medicalHistoryController,
+                          decoration: const InputDecoration(
+                            labelText: 'Medical History',
+                            hintText: 'Summarize relevant medical history',
+                          ),
+                          maxLines: 3,
+                          onChanged: (_) => _handleFieldChange(),
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _chiefComplaintController,
+                          decoration: const InputDecoration(
+                            labelText: 'Chief Complaint',
+                          ),
+                          maxLines: 3,
+                          onChanged: (_) => _handleFieldChange(),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Enter the chief complaint';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 24),
+                        ElevatedButton(
+                          onPressed: _isSaving ? null : _saveAndContinue,
+                          style: ElevatedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(48),
+                          ),
+                          child: _isSaving
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Text('Continue to Vitals'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+    );
+  }
+}

@@ -251,7 +251,6 @@ class _ReportPageState extends State<ReportPage> {
                   'Temp ${entry['temperature']} F',
                 if ((entry['notes'] as String?)?.isNotEmpty ?? false)
                   'Notes: ${entry['notes']}',
-                _formatDateTime(recorded),
               ].where((part) => part.isNotEmpty).join('\n'),
             ),
           ),
@@ -291,13 +290,6 @@ class _ReportPageState extends State<ReportPage> {
     if (dateTime == null) return '';
     final time = TimeOfDay.fromDateTime(dateTime);
     return time.format(context);
-  }
-
-  String _formatDateTime(DateTime? dateTime) {
-    if (dateTime == null) return '';
-    final date = _formatDate(dateTime);
-    final time = _formatTime(dateTime);
-    return '$date at $time';
   }
 
   String _describeSex(String? code) {

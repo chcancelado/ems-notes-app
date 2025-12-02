@@ -251,16 +251,22 @@ List<String> _buildPatientLines(
     return const [];
   }
   final lines = <String>[];
-  final name = patient['name'] as String?;
-  if (name != null && name.isNotEmpty) {
+  const defaultPatientName = 'No Patient Name Entered';
+  final today = DateTime.now();
+  final name = (patient['name'] as String?)?.trim() ?? '';
+  if (name.isNotEmpty && name != defaultPatientName) {
     lines.add('Name: $name');
   }
   final dob = _parseDate(patient['date_of_birth']);
-  if (dob != null) {
+  final isPlaceholderDob = dob != null &&
+      dob.year == today.year &&
+      dob.month == today.month &&
+      dob.day == today.day;
+  if (dob != null && !isPlaceholderDob) {
     lines.add('DOB: ${_formatDate(dob)}');
   }
   final sex = patient['sex'] as String?;
-  if (sex != null && sex.isNotEmpty) {
+  if (sex != null && sex.isNotEmpty && sex.toUpperCase() != 'U') {
     lines.add('Sex: ${_describeSex(sex)}');
   }
   final heightLine = _formatHeight(patient['height_in_inches']);
@@ -459,7 +465,7 @@ String _describeSex(String code) {
 
 String? _formatHeight(dynamic value) {
   final height = _asInt(value);
-  if (height == null || height <= 0) {
+  if (height == null || height <= 1) {
     return null;
   }
   final feet = height ~/ 12;
@@ -469,7 +475,7 @@ String? _formatHeight(dynamic value) {
 
 String? _formatWeight(dynamic value) {
   final weight = _asInt(value);
-  if (weight == null || weight <= 0) {
+  if (weight == null || weight <= 1) {
     return null;
   }
   return '$weight lbs';
