@@ -4,7 +4,7 @@
   "private": true,
   "main": "main.js",
   "scripts": {
-    "flutter:build": "cd .. && flutter build web --release --pwa-strategy=none",
+    "flutter:build": "node scripts/build_flutter_web.js",
     "start": "npm run flutter:build && electron .",
     "dist:mac": "npm run flutter:build && electron-builder --mac",
     "dist:win": "npm run flutter:build && electron-builder --win",
