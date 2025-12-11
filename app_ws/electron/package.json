@@ -1,0 +1,46 @@
+{
+  "name": "ems-notes-demo",
+  "version": "0.1.0",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "flutter:build": "cd .. && flutter build web --release --pwa-strategy=none",
+    "start": "npm run flutter:build && electron .",
+    "dist:mac": "npm run flutter:build && electron-builder --mac",
+    "dist:win": "npm run flutter:build && electron-builder --win",
+    "dist:linux": "npm run flutter:build && electron-builder --linux"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "electron": "^32.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.emsnotes.demo",
+    "productName": "EMS Notes Demo",
+    "files": [
+      "**/*",
+      "!dist/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../build/web",
+        "to": "build/web"
+      }
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "target": ["dmg", "zip"]
+    },
+    "win": {
+      "target": ["nsis", "zip"]
+    },
+    "linux": {
+      "target": ["AppImage", "zip"]
+    }
+  }
+}
