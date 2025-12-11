@@ -42,4 +42,69 @@ The app would focus on non-consequential, low-risk interventions such as:
 
 * No diagnostic claims. 
 
-* Framed strictly as checklists, reminders, and documentation tools. 
+* Framed strictly as checklists, reminders, and documentation tools.
+
+
+---
+
+# Demo (No Flutter Install): Electron Wrapper
+
+This repo includes an Electron wrapper that packages the Flutter Web build into a desktop app for stakeholders who don't have Flutter installed.
+
+**Environment variables**: The build script (`electron/scripts/build_flutter_web.js`) reads `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `OPENAI_API_KEY` from your `.env` and bakes them into the web build via `--dart-define`. These keys are **embedded in the demo bundle** (including the OpenAI key) — use disposable/restricted keys for stakeholder demos.
+
+## Run locally (developer)
+
+```zsh
+cd electron
+npm install
+npm run start
+```
+
+## Create distributable app for stakeholders
+
+**macOS** (creates a `.dmg` + `.zip`):
+
+```zsh
+cd electron
+npm install
+npm run dist:mac
+```
+
+**Windows** (requires Windows machine or CI):
+
+```cmd
+cd electron
+npm install
+npm run dist:win
+```
+
+**Linux** (requires Linux machine or CI):
+
+```bash
+cd electron
+npm install
+npm run dist:linux
+```
+
+Outputs land in `electron/dist/`.
+
+## Automated builds via GitHub Actions
+
+The repo includes a CI workflow (`.github/workflows/build-electron.yml`) that automatically builds **both macOS and Windows** installers when you push to `feature/executable` or `main`.
+
+**Setup (one-time)**:
+1. Go to your GitHub repo → **Settings** → **Secrets and variables** → **Actions**
+2. Add repository secrets:
+   - `SUPABASE_URL` — Your Supabase project URL
+   - `SUPABASE_ANON_KEY` — Your Supabase anon key
+   - `OPENAI_API_KEY` — OpenAI API key (use a restricted key for demos)
+
+**Download installers**:
+1. Push your changes to `feature/executable` or `main`
+2. Go to **Actions** tab in GitHub
+3. Click the latest workflow run
+4. Download artifacts:
+   - `ems-notes-demo-macos` — Contains `.dmg` and `.zip` for macOS
+   - `ems-notes-demo-windows` — Contains `.exe` installer and `.zip` for Windows
+   - `ems-notes-demo-linux` — Contains `.AppImage` (run directly) and `.zip` for Linux 
