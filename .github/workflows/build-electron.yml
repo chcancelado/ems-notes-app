@@ -1,0 +1,86 @@
+name: Build Electron Demo
+
+on:
+  push:
+    branches: [feature/executable, main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.4'
+          channel: 'stable'
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Create .env file
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
+          echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
+          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> .env
+        working-directory: ./app_ws
+        shell: bash
+      
+      - name: Install Electron dependencies
+        run: npm install
+        working-directory: ./app_ws/electron
+      
+      - name: Build macOS app
+        if: matrix.os == 'macos-latest'
+        run: npm run dist:mac
+        working-directory: ./app_ws/electron
+      
+      - name: Build Windows app
+        if: matrix.os == 'windows-latest'
+        run: npm run dist:win
+        working-directory: ./app_ws/electron
+      
+      - name: Build Linux app
+        if: matrix.os == 'ubuntu-latest'
+        run: npm run dist:linux
+        working-directory: ./app_ws/electron
+      
+      - name: Upload macOS artifacts
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ems-notes-demo-macos
+          path: |
+            app_ws/electron/dist/*.dmg
+            app_ws/electron/dist/*.zip
+          retention-days: 30
+      
+      - name: Upload Windows artifacts
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ems-notes-demo-windows
+          path: |
+            app_ws/electron/dist/*.exe
+            app_ws/electron/dist/*.zip
+          retention-days: 30
+      
+      - name: Upload Linux artifacts
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ems-notes-demo-linux
+          path: |
+            app_ws/electron/dist/*.AppImage
+            app_ws/electron/dist/*.zip
+          retention-days: 30
