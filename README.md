@@ -44,14 +44,11 @@ The app would focus on non-consequential, low-risk interventions such as:
 
 This project includes an Electron wrapper that packages the Flutter Web app into a standalone desktop application that runs without requiring Flutter installation.
 
-**⚠️ Security Note**: API keys (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `OPENAI_API_KEY`) are embedded in the desktop build. Use restricted or disposable keys for distribution.
-
 ## Download Pre-built Desktop Apps
 
 The easiest way to run this app is to download pre-built installers from GitHub Actions:
 
-1. Go to the [Actions tab](https://github.com/collin-sager/ems-notes-app/actions)
-2. Click the latest **"Build Electron Demo"** workflow run
+1. Go to the [Build Electron Demo workflow run](https://github.com/chcancelado/ems-notes-app/actions/runs/20153605800#artifacts)
 3. Download the artifact for your platform:
    - **macOS Apple Silicon** (M1/M2/M3/M4): `ems-notes-demo-macos-arm64` — Contains `.dmg` and `.zip`
    - **macOS Intel**: `ems-notes-demo-macos-intel` — Contains `.dmg` and `.zip`
@@ -66,6 +63,51 @@ Since the app isn't signed with an Apple Developer certificate, macOS will block
 2. Select **"Open"**
 3. Click **"Open"** in the security dialog
 4. The app will now run normally (only needed once)
+
+## Getting Started with the Demo
+
+Once you have the app running, here's how to use it:
+
+### 1. Create an Account
+
+- Click **"Sign Up"** on the welcome screen
+- Enter your email and create a password
+- **Agency Code**: Enter any code you like (e.g., "DEMO2025")
+  - This code groups users together for report sharing
+  - Use the same agency code across multiple test accounts to demo collaboration features
+
+### 2. Log In
+
+- Use the email and password you just created
+- You'll be taken to the home screen
+
+### 3. Start a New Session
+
+- Click **"New Session"** from the home screen
+- Fill in incident details:
+  - **Incident Type**: Medical, Fire, Vehicle, etc.
+  - **Location**: Address of the incident
+  - **Date & Time**: When you arrived
+
+### 4. Record Patient Information
+
+- **Patient Info tab**: Enter demographics, contact info, medical history
+- **Vitals tab**: Record vital signs (heart rate, blood pressure, etc.)
+  - Add multiple readings over time
+- **AI Assistant**: Click the chat icon to get contextual suggestions and protocol reminders
+
+### 5. Generate and Share Reports
+
+- Once you've recorded information, the app auto-generates a professional report
+- **Share Report**: Send via email or export as PDF
+- **Test Collaboration**: Create multiple accounts with the same agency code, then share reports between them to see how teams can collaborate
+
+### Tips for Testing
+
+- Create 2-3 test accounts with the same agency code to demo the sharing features
+- Try different incident types to see how the AI assistant adapts its suggestions
+- Record multiple vitals readings to see the tracking over time
+- Use the chatbot to ask questions like "What should I check first for this type of incident?"
 
 ## Run Locally (Development Mode)
 
