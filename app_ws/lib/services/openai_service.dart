@@ -7,7 +7,16 @@ class OpenAIService {
   
   final String _apiKey;
 
-  OpenAIService() : _apiKey = dotenv.env['OPENAI_API_KEY'] ?? '';
+  OpenAIService() : _apiKey = _getApiKey();
+
+  static String _getApiKey() {
+    // Try compile-time constant first (for web/Electron builds with --dart-define)
+    const fromDefine = String.fromEnvironment('OPENAI_API_KEY');
+    if (fromDefine.isNotEmpty) return fromDefine;
+    
+    // Fall back to dotenv for local development
+    return dotenv.env['OPENAI_API_KEY'] ?? '';
+  }
 
   /// Send a message to OpenAI and get a response
   /// 
