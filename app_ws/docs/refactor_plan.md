@@ -1,0 +1,24 @@
+# EMS Notes Refactor Plan
+
+## Goals
+- Simplify data flow between Supabase, in-memory session caching, and UI widgets.
+- Reduce repetition in form handling and validation while improving consistency across pages.
+- Improve maintainability by isolating state management from presentation and standardizing shared components.
+
+## Data and domain layer
+- **Introduce a dedicated domain model layer and mappers.** `Session` currently lives in `session_service.dart` while `SupabaseSessionRepository` rebuilds patient, incident, and vitals maps manually. Extract immutable model classes (Session, IncidentInfo, PatientInfo, VitalsEntry) plus mappers to/from Supabase rows so both the repository and UI can share the same types instead of ad-hoc maps. This removes duplication across `_buildIncidentInfo`, `_buildPatientInfo`, and `_buildVitals` as well as similar parsing inside `Session`.【F:lib/services/supabase_session_repository.dart†L6-L140】【F:lib/services/session_service.dart†L3-L136】
+- **Standardize authentication and error handling.** `_requireUser` is repeated in multiple places and throws generic `StateError`s. Centralize auth checks and create typed failures for “not authenticated” or “no agency membership” to allow the UI to surface actionable messages and retry flows. Align repository methods to return domain types or `Result` wrappers instead of raw maps to simplify callers like `SessionsPage` and `PatientInfoPage`.【F:lib/services/supabase_session_repository.dart†L14-L140】【F:lib/services/agency_service.dart†L18-L89】
+- **Add caching/refresh policies.** `SessionsPage` manually decides when to refetch and updates the global `sessionService`. Introduce a repository-backed cache with timestamps and explicit refresh calls so UI widgets can request “fresh” or “cached” data without duplicating pagination and sorting logic. This will also simplify `_loadSessions` and pagination calculations. 【F:lib/features/sessions/sessions_page.dart†L19-L107】
+
+## Presentation and state management
+- **Extract controllers/view models from heavy widgets.** `LoginPage`, `PatientInfoPage`, and `SessionsPage` contain substantial business logic (validation, Supabase calls, pagination) interleaved with UI. Move that logic into testable controllers (e.g., using ChangeNotifier/Riverpod/BLoC) and keep widgets declarative. This will also make it easier to unit-test behaviors such as sign-up vs. login flows, patient hydration, and session sharing. 【F:lib/features/login/login_page.dart†L15-L198】【F:lib/features/patient_info/patient_info_page.dart†L20-L124】【F:lib/features/sessions/sessions_page.dart†L19-L107】
+- **Unify form validation and input components.** Multiple pages manually build `TextFormField` decorations and validators. Create shared form field widgets (email/password, height/weight inputs, agency code) that encapsulate validation, formatting, and consistent decoration using the existing `form_styles` helpers. This reduces boilerplate and ensures consistent UX for required/optional fields across flows. 【F:lib/features/login/login_page.dart†L115-L199】【F:lib/features/patient_info/patient_info_page.dart†L25-L160】
+- **Modularize pagination and table controls.** The session list implements custom pagination, sorting, and action menus inside one widget. Extract a reusable paginated list/table component with hooks for row actions, selection, and empty/error states so other list-based pages (e.g., vitals history) can reuse it. This also isolates keyboard and accessibility behavior. 【F:lib/features/sessions/sessions_page.dart†L19-L214】
+
+## Routing, configuration, and app shell
+- **Centralize route definitions and navigation helpers.** Routes are currently hard-coded strings in `main.dart` and throughout navigation calls. Define typed route names or a router class to avoid typos, enable deep-link support, and simplify guarded navigation based on auth/session presence. 【F:lib/main.dart†L16-L82】
+- **Harden configuration loading.** `SupabaseEnv` reads from `.env` and `--dart-define` but surfaces missing configuration only via `StateError`. Add clear startup diagnostics, logging, and development defaults, and consider a single `AppConfig` object that can be injected for tests. 【F:lib/config/supabase_env.dart†L3-L29】【F:lib/main.dart†L16-L27】
+
+## Testing and quality
+- **Add unit and widget coverage around data mappers and controllers.** Once domain models and controllers are introduced, add tests for Supabase row parsing, offline caching, and key UI flows (login, patient info save, session sharing). This safeguards refactors and provides living documentation of expected behaviors. 
+- **Introduce lint rules and CI hooks.** Enforce a consistent style (e.g., `dart format`, `flutter analyze`, `very_good_analysis` presets) and add pre-commit hooks to catch runtime nullability issues, missing awaits, and dead code across the growing codebase.

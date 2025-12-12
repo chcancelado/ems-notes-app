@@ -42,4 +42,95 @@ The app would focus on non-consequential, low-risk interventions such as:
 
 * No diagnostic claims. 
 
-* Framed strictly as checklists, reminders, and documentation tools. 
+* Framed strictly as checklists, reminders, and documentation tools.
+
+
+---
+
+# Desktop App (No Flutter Install Required)
+
+This project includes an Electron wrapper that packages the Flutter Web app into a standalone desktop application that runs without requiring Flutter installation.
+
+**⚠️ Security Note**: API keys (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `OPENAI_API_KEY`) are embedded in the desktop build. Use restricted or disposable keys for distribution.
+
+## Download Pre-built Desktop Apps
+
+The easiest way to run this app is to download pre-built installers from GitHub Actions:
+
+1. Go to the [Actions tab](https://github.com/collin-sager/ems-notes-app/actions)
+2. Click the latest **"Build Electron Demo"** workflow run
+3. Download the artifact for your platform:
+   - **macOS Apple Silicon** (M1/M2/M3/M4): `ems-notes-demo-macos-arm64` — Contains `.dmg` and `.zip`
+   - **macOS Intel**: `ems-notes-demo-macos-intel` — Contains `.dmg` and `.zip`
+   - **Windows**: `ems-notes-demo-windows` — Contains `.exe` installer and `.zip`
+   - **Linux**: `ems-notes-demo-linux` — Contains `.AppImage` (portable) and `.zip`
+
+### macOS Security Notice
+
+Since the app isn't signed with an Apple Developer certificate, macOS will block it on first launch:
+
+1. **Right-click** (or Control+click) on **EMS Notes Demo**
+2. Select **"Open"**
+3. Click **"Open"** in the security dialog
+4. The app will now run normally (only needed once)
+
+## Run Locally (Development Mode)
+
+**Requirements:**
+- Node.js v20 or later ([Download](https://nodejs.org/))
+
+**Steps:**
+```bash
+cd electron
+npm install
+npm run start
+```
+
+## Build Desktop Apps Locally
+
+**Requirements:**
+- Node.js v20 or later ([Download](https://nodejs.org/))
+- Flutter v3.35.4 or compatible ([Download](https://flutter.dev/docs/get-started/install))
+
+**Create .env file** (in `app_ws/` directory):
+```bash
+SUPABASE_URL=https://vhcxbsmqnwuuhizhrlmt.supabase.co
+SUPABASE_ANON_KEY=<your-key>
+OPENAI_API_KEY=<your-key>
+```
+
+**Build for your platform:**
+
+```bash
+# macOS (auto-detects architecture)
+cd electron
+npm install
+npm run dist:mac
+
+# macOS Apple Silicon specifically
+npm run dist:mac:arm64
+
+# macOS Intel specifically
+npm run dist:mac:x64
+
+# Windows (requires Windows machine)
+npm run dist:win
+
+# Linux (requires Linux machine)
+npm run dist:linux
+```
+
+Installers will be created in `electron/dist/`.
+
+## Automated Builds (CI/CD)
+
+This repository includes a GitHub Actions workflow that automatically builds desktop apps for all platforms when code is pushed.
+
+**Setup (for repository maintainers):**
+1. Go to repository **Settings** → **Secrets and variables** → **Actions**
+2. Add these secrets:
+   - `SUPABASE_URL` — Supabase project URL
+   - `SUPABASE_ANON_KEY` — Supabase anonymous key
+   - `OPENAI_API_KEY` — OpenAI API key
+
+The workflow automatically triggers on pushes to `feature/executable` or `main` branches. 
