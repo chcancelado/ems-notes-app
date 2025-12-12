@@ -9,7 +9,23 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        include:
+          - os: macos-latest
+            arch: arm64
+            build-script: dist:mac:arm64
+            artifact-name: ems-notes-demo-macos-arm64
+          - os: macos-latest
+            arch: x64
+            build-script: dist:mac:x64
+            artifact-name: ems-notes-demo-macos-intel
+          - os: windows-latest
+            arch: x64
+            build-script: dist:win
+            artifact-name: ems-notes-demo-windows
+          - os: ubuntu-latest
+            arch: x64
+            build-script: dist:linux
+            artifact-name: ems-notes-demo-linux
     
     runs-on: ${{ matrix.os }}
     
@@ -40,47 +56,17 @@ jobs:
         run: npm install
         working-directory: ./app_ws/electron
       
-      - name: Build macOS app
-        if: matrix.os == 'macos-latest'
-        run: npm run dist:mac
+      - name: Build app
+        run: npm run ${{ matrix.build-script }}
         working-directory: ./app_ws/electron
       
-      - name: Build Windows app
-        if: matrix.os == 'windows-latest'
-        run: npm run dist:win
-        working-directory: ./app_ws/electron
-      
-      - name: Build Linux app
-        if: matrix.os == 'ubuntu-latest'
-        run: npm run dist:linux
-        working-directory: ./app_ws/electron
-      
-      - name: Upload macOS artifacts
-        if: matrix.os == 'macos-latest'
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ems-notes-demo-macos
+          name: ${{ matrix.artifact-name }}
           path: |
             app_ws/electron/dist/*.dmg
-            app_ws/electron/dist/*.zip
-          retention-days: 30
-      
-      - name: Upload Windows artifacts
-        if: matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ems-notes-demo-windows
-          path: |
             app_ws/electron/dist/*.exe
-            app_ws/electron/dist/*.zip
-          retention-days: 30
-      
-      - name: Upload Linux artifacts
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ems-notes-demo-linux
-          path: |
             app_ws/electron/dist/*.AppImage
             app_ws/electron/dist/*.zip
           retention-days: 30

@@ -7,6 +7,8 @@
     "flutter:build": "node scripts/build_flutter_web.js",
     "start": "npm run flutter:build && electron .",
     "dist:mac": "npm run flutter:build && electron-builder --mac",
+    "dist:mac:arm64": "npm run flutter:build && electron-builder --mac --arm64",
+    "dist:mac:x64": "npm run flutter:build && electron-builder --mac --x64",
     "dist:win": "npm run flutter:build && electron-builder --win",
     "dist:linux": "npm run flutter:build && electron-builder --linux"
   },
